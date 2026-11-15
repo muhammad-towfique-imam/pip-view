@@ -47,11 +47,12 @@ impl Border {
     }
 }
 
-/// An unknown value (for example from a newer version) gives `Border::None`,
-/// so that the rest of the config file still loads.
+/// An unknown value of any type (for example from a newer version) gives
+/// `Border::None`, so that the rest of the config file still loads.
 impl<'de> Deserialize<'de> for Border {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let name = String::deserialize(d)?;
+        let value = serde_json::Value::deserialize(d)?;
+        let name = value.as_str().unwrap_or_default();
         Ok(Border::ALL.into_iter().find(|b| b.label() == name).unwrap_or_default())
     }
 }

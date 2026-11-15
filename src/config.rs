@@ -118,6 +118,18 @@ mod tests {
     }
 
     #[test]
+    fn non_string_border_loads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        for value in ["3", "null", "true", r#"{ "color": "red" }"#] {
+            let json = V010_JSON.replacen('{', &format!(r#"{{ "border": {value},"#), 1);
+            std::fs::write(&path, json).unwrap();
+            let cfg = load(&path).unwrap_or_else(|| panic!("config with border {value} must load"));
+            assert_eq!(cfg.border, Border::None, "border {value}");
+        }
+    }
+
+    #[test]
     fn find_camera_by_name_not_index() {
         let names = vec!["OBS Virtual".to_string(), "Logitech C920".to_string()];
         assert_eq!(find_camera(&names, "Logitech C920"), Some(1));
