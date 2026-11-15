@@ -49,8 +49,9 @@ The user said "start" and gave the choice of the method to the builder.
 - A tap on the PiP window opens the menu (Android has no right-click).
 - The release tag sets `versionName`, and `versionCode` is
   `major*10000 + minor*100 + patch`.
-- Release signing uses 4 repository secrets. Without them, the APK has a
-  temporary debug key.
+- Release signing uses the same method as the led-masjid-clock repo (the
+  user's choice): the keystore is in git as an AES-256-GCM encrypted file,
+  and the passphrase is in the `WEBCAMVIEWPIP_KEY_PASSPHRASE` secret.
 
 ## Known limits
 

@@ -1,3 +1,17 @@
+import webcamviewpip.signing.ReleaseSigning
+
+// The release key: decrypted from keystore-backup/webcam-view-pip-key.enc with WEBCAMVIEWPIP_KEY_PASSPHRASE
+// (environment or the git-ignored android/.env), or else read from keystore.properties. See README.
+val releaseSigning: ReleaseSigning.Result? = ReleaseSigning.load(rootProject.projectDir, System.getenv())
+val releaseRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (releaseRequested) {
+    if (releaseSigning == null) {
+        logger.warn("webcam-view-pip: no release key. Set WEBCAMVIEWPIP_KEY_PASSPHRASE in android/.env. The release APK is unsigned.")
+    } else {
+        logger.lifecycle("webcam-view-pip: release key from ${releaseSigning.source}")
+    }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -9,10 +23,6 @@ val appVersionCode: Int = appVersionName.substringBefore('-').split('.')
     .map { it.toIntOrNull() ?: 0 }
     .let { (it + listOf(0, 0, 0)).take(3) }
     .let { (major, minor, patch) -> maxOf(1, major * 10000 + minor * 100 + patch) }
-
-// The release workflow sets these from GitHub secrets. Without them, the
-// release APK uses the debug key.
-val keystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
 
 android {
     namespace = "io.github.muhammadtowfiqueimam.webcamviewpip"
@@ -27,12 +37,12 @@ android {
     }
 
     signingConfigs {
-        if (keystorePath != null) {
+        releaseSigning?.let { key ->
             create("release") {
-                storeFile = file(keystorePath)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                storeFile = key.storeFile
+                storePassword = key.storePassword
+                keyAlias = key.keyAlias
+                keyPassword = key.keyPassword
             }
         }
     }
@@ -42,7 +52,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -69,4 +79,13 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
     testImplementation("junit:junit:4.13.2")
+}
+
+tasks.register("encryptReleaseKey") {
+    group = "signing"
+    description = "Encrypts keystore.properties and its keystore into keystore-backup/webcam-view-pip-key.enc."
+    doLast {
+        val file = ReleaseSigning.encrypt(rootProject.projectDir, System.getenv())
+        println("Wrote $file. Commit this file. Keep WEBCAMVIEWPIP_KEY_PASSPHRASE in a password manager.")
+    }
 }

@@ -87,10 +87,31 @@ git push origin v0.1.0
 The workflow then attaches `webcam-view-pip.exe` and `webcam-view-pip.apk` to
 a GitHub release for that tag. The tag also sets the Android version name.
 
-The Android release APK uses the signing key in these repository secrets:
-`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-and `ANDROID_KEY_PASSWORD`. Without them, the workflow signs the APK with a
-temporary debug key, and Android cannot update an installed copy from it.
+### Android release key
+
+Android installs an update over an earlier version only if both use the same
+key. The certificate SHA-256 of the webcam-view-pip key is
+`fd5a376ac527c757f975f9897effbe116811d2eca6b7fdfa7796c5e97158cbe3`.
+
+Git contains the key and its passwords only as an encrypted file,
+`android/keystore-backup/webcam-view-pip-key.enc` (AES-256-GCM, key from the
+passphrase with PBKDF2). The release build decrypts it with the passphrase
+from the environment variable `WEBCAMVIEWPIP_KEY_PASSPHRASE`, or from the
+git-ignored file `android/.env` (see `android/.env.example`). Without a
+passphrase, the release APK is unsigned. With a wrong passphrase, the build
+stops.
+
+The workflow gets the passphrase from the repository secret
+`WEBCAMVIEWPIP_KEY_PASSPHRASE`. A tag build stops if the secret is missing or
+if the APK has a different signer.
+
+**CAUTION: Keep the passphrase in a password manager. Without it, the
+encrypted file is useless. Never commit `android/.env`, `android/keystore/`,
+or `android/keystore.properties`.**
+
+To make the encrypted file again after a key change, write
+`keystore.properties` and the passphrase in `android/.env`, then run
+`./gradlew encryptReleaseKey` in `android/` and commit the new file.
 
 Local build of the Windows app (Linux uses V4L2 for the camera, Windows uses
 Media Foundation):
