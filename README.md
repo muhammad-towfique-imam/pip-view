@@ -1,11 +1,15 @@
-# webcam-view-pip — PiP Camera for Windows
+# webcam-view-pip — PiP Camera for Windows and Android
 
-**A free picture-in-picture (PiP) webcam viewer for Windows.** webcam-view-pip shows
-your camera in a small window that stays on top of all other apps. You can
-crop the camera image, so the window shows only the area that you select.
+**A free picture-in-picture (PiP) webcam viewer for Windows and Android.**
+webcam-view-pip shows your camera in a small window that stays on top of all
+other apps. You can crop the camera image, so the window shows only the area
+that you select.
 
-[**Download webcam-view-pip.exe**](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe)
-(Windows 10 and 11, 64-bit, no installation) ·
+- [**Download webcam-view-pip.exe**](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe)
+  for Windows 10 and 11, 64-bit, no installation.
+- [**Download webcam-view-pip.apk**](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.apk)
+  for Android 8.0 and later.
+
 [Website](https://muhammad-towfique-imam.github.io/webcam-view-pip/) ·
 [All releases](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases)
 
@@ -20,7 +24,7 @@ crop the camera image, so the window shows only the area that you select.
 - The app remembers the camera, the area, and the window position.
 - 1 small `.exe` file. Free and open source (MIT license).
 
-## Use
+## Use on Windows
 
 1. Start `webcam-view-pip.exe`.
 2. Select a camera and click **Next**.
@@ -41,10 +45,37 @@ The app saves the camera, the area, and the window position in
 window directly. If the saved camera is not connected, the app opens the
 camera list. To start the setup again, delete the config file.
 
+## Use on Android
+
+1. Install `webcam-view-pip.apk`. Android asks you to allow installs from
+   your browser or file app.
+2. Start the app and allow the camera permission.
+3. Select a camera and tap **Next**.
+4. Drag on the camera image to select the area. Tap **Confirm**.
+5. Allow **Display over other apps** for webcam-view-pip, then go back.
+6. The PiP window opens on top of other apps.
+
+In the PiP window:
+
+- Drag the window to move it.
+- Drag the bottom-right corner to resize it.
+- Tap the window to open the menu: **Select area**, **Select camera**,
+  **Border**, **Exit**.
+
+While the PiP window is open, Android shows a notification. Tap **Exit** in
+the notification to close the window. At the next start, the app opens the
+PiP window directly with the saved settings.
+
+## Repository layout
+
+- `rust/` — the Windows app (Rust, egui).
+- `android/` — the Android app (Kotlin, CameraX).
+- `site/` — the website.
+
 ## Build
 
-GitHub Actions builds the app on Windows for each pull request and each
-manual run. The `.exe` is attached to the workflow run as an artifact.
+GitHub Actions builds both apps for each pull request and each manual run.
+The `.exe` and the `.apk` are attached to the workflow run as artifacts.
 
 To publish a release, push a version tag:
 
@@ -53,14 +84,28 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow then attaches `webcam-view-pip.exe` to a GitHub release for that tag.
+The workflow then attaches `webcam-view-pip.exe` and `webcam-view-pip.apk` to
+a GitHub release for that tag. The tag also sets the Android version name.
 
-Local build (Linux uses V4L2 for the camera, Windows uses Media Foundation):
+The Android release APK uses the signing key in these repository secrets:
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+and `ANDROID_KEY_PASSWORD`. Without them, the workflow signs the APK with a
+temporary debug key, and Android cannot update an installed copy from it.
+
+Local build of the Windows app (Linux uses V4L2 for the camera, Windows uses
+Media Foundation):
 
 ```sh
 cd rust
 cargo test
 cargo build --release
+```
+
+Local build of the Android app (JDK 17 or later and the Android SDK):
+
+```sh
+cd android
+./gradlew testDebugUnitTest assembleDebug
 ```
 
 ## License

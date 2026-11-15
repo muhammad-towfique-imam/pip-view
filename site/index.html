@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PiP Camera for Windows – Picture-in-Picture Webcam Viewer | webcam-view-pip</title>
-<meta name="description" content="webcam-view-pip is a free PiP camera app for Windows. It shows your webcam in a small picture-in-picture window that stays on top, and shows only the area of the camera that you select.">
+<title>PiP Camera for Windows and Android – Picture-in-Picture Webcam Viewer | webcam-view-pip</title>
+<meta name="description" content="webcam-view-pip is a free PiP camera app for Windows and Android. It shows your webcam in a small picture-in-picture window that stays on top, and shows only the area of the camera that you select.">
 <link rel="canonical" href="https://muhammad-towfique-imam.github.io/webcam-view-pip/">
 <!-- Google Search Console: paste the verification meta tag on the next line. -->
 
 <meta property="og:type" content="website">
-<meta property="og:title" content="webcam-view-pip – PiP Camera for Windows">
-<meta property="og:description" content="Free picture-in-picture webcam viewer for Windows. Always on top. Crop the camera to the area you need.">
+<meta property="og:title" content="webcam-view-pip – PiP Camera for Windows and Android">
+<meta property="og:description" content="Free picture-in-picture webcam viewer for Windows and Android. Always on top. Crop the camera to the area you need.">
 <meta property="og:url" content="https://muhammad-towfique-imam.github.io/webcam-view-pip/">
 <meta name="twitter:card" content="summary">
 <script type="application/ld+json">
@@ -18,11 +18,14 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "webcam-view-pip",
-  "alternateName": "PiP Camera for Windows",
-  "description": "Free picture-in-picture (PiP) webcam viewer for Windows. Shows a selected area of a camera in a small window that stays on top of other apps.",
-  "operatingSystem": "Windows 10, Windows 11",
+  "alternateName": "PiP Camera for Windows and Android",
+  "description": "Free picture-in-picture (PiP) webcam viewer for Windows and Android. Shows a selected area of a camera in a small window that stays on top of other apps.",
+  "operatingSystem": "Windows 10, Windows 11, Android 8.0 or later",
   "applicationCategory": "MultimediaApplication",
-  "downloadUrl": "https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe",
+  "downloadUrl": [
+    "https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe",
+    "https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.apk"
+  ],
   "url": "https://muhammad-towfique-imam.github.io/webcam-view-pip/",
   "license": "https://opensource.org/licenses/MIT",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -42,6 +45,11 @@
       "@type": "Question",
       "name": "Can I show only a part of the camera image?",
       "acceptedAnswer": { "@type": "Answer", "text": "Yes. webcam-view-pip crops the camera image to the area that you select. Right-click the window and click Select area to change it." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is there a PiP camera app for Android?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Install webcam-view-pip.apk on Android 8.0 or later. The app shows the phone camera in a small window on top of other apps. Allow the camera permission and the Display over other apps permission." }
     },
     {
       "@type": "Question",
@@ -95,20 +103,22 @@
 </head>
 <body>
 <main>
-  <h1>PiP Camera for Windows</h1>
+  <h1>PiP Camera for Windows and Android</h1>
   <p class="lead">webcam-view-pip is a free picture-in-picture webcam viewer. It shows your camera in a small window that stays on top of all other apps, and it shows only the area of the camera that you select.</p>
 
   <div class="cta">
-    <a class="btn" href="https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe">Download webcam-view-pip.exe</a>
+    <a class="btn" href="https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe">Download for Windows (.exe)</a>
+    <a class="btn" href="https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.apk">Download for Android (.apk)</a>
     <a class="btn secondary" href="https://github.com/muhammad-towfique-imam/webcam-view-pip">Source code on GitHub</a>
   </div>
-  <p class="note">Windows 10 and 11, 64-bit. No installation. Free and open source (MIT).</p>
+  <p class="note">Windows 10 and 11, 64-bit, no installation. Android 8.0 or later. Free and open source (MIT).</p>
 
   <h2>Features</h2>
   <ul class="grid">
     <li><strong>Always on top.</strong> The webcam window stays above your other apps and has no border.</li>
     <li><strong>Crop the camera.</strong> Show only a part of the image: a whiteboard, a desk, a door, or a second screen.</li>
     <li><strong>Move and resize.</strong> Drag the window to move it. Drag the bottom-right corner to resize it.</li>
+    <li><strong>Windows and Android.</strong> Use a webcam on a PC, or the phone camera on Android.</li>
     <li><strong>Colored border.</strong> None, White, Green, Red, Blue, or Yellow.</li>
     <li><strong>Any camera.</strong> USB webcams, laptop cameras, capture cards, and virtual cameras.</li>
     <li><strong>Remembers settings.</strong> The camera, the area, and the window position stay the same at the next start.</li>
@@ -119,7 +129,7 @@
     <li>Download and start <code>webcam-view-pip.exe</code>.</li>
     <li>Select your camera and click <strong>Next</strong>.</li>
     <li>Drag a rectangle on the camera image to select the area. Click <strong>Confirm</strong>.</li>
-    <li>The picture-in-picture window opens. Right-click it to select a different area, a different camera, or a border.</li>
+    <li>The picture-in-picture window opens. Right-click it (on Android, tap it) to select a different area, a different camera, or a border.</li>
   </ol>
 
   <h2>Questions</h2>
@@ -127,6 +137,8 @@
   <p>Download webcam-view-pip.exe and start it. Select your camera, drag a rectangle on the camera image, and click Confirm. The camera opens in a small window that stays on top of other apps.</p>
   <h3>Can I show only a part of the camera image?</h3>
   <p>Yes. webcam-view-pip crops the camera image to the area that you select. Right-click the window and click Select area to change it.</p>
+  <h3>Is there a PiP camera app for Android?</h3>
+  <p>Yes. Install webcam-view-pip.apk on Android 8.0 or later. The app shows the phone camera in a small window on top of other apps. Allow the camera permission and the Display over other apps permission.</p>
   <h3>Is webcam-view-pip free?</h3>
   <p>Yes. webcam-view-pip is free and open source under the MIT license.</p>
   <h3>Do I need to install webcam-view-pip?</h3>
