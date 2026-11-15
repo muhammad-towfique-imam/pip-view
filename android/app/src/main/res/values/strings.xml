@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">webcam-view-pip</string>
+    <string name="loading">Starting the camera…</string>
+    <string name="no_camera_permission">The app needs the camera permission to show the camera.</string>
+    <string name="open_settings">Open settings</string>
+    <string name="no_cameras">No camera found.</string>
+    <string name="select_camera">Select camera</string>
+    <string name="select_area">Select area</string>
+    <string name="next">Next</string>
+    <string name="back">Back</string>
+    <string name="full_image">Full image</string>
+    <string name="confirm">Confirm</string>
+    <string name="drag_hint">Drag on the image to select the area.</string>
+    <string name="camera_error">The camera did not start: %1$s</string>
+    <string name="overlay_permission">The app needs the \"Display over other apps\" permission to show the camera window on top of other apps.</string>
+    <string name="camera_back">Back camera</string>
+    <string name="camera_front">Front camera</string>
+    <string name="camera_external">USB camera</string>
+    <string name="border">Border</string>
+    <string name="exit">Exit</string>
+    <string name="channel_name">Camera window</string>
+    <string name="notification_title">The camera window is open</string>
+    <string name="notification_text">Tap to select a different area.</string>
+</resources>
