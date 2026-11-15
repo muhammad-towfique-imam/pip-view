@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 description = "PiP camera for Windows: a picture-in-picture webcam window that stays on top and shows a selected area of the camera"
 license = "MIT"
-repository = "https://github.com/muhammad-towfique-imam/pip-view"
+repository = "https://github.com/muhammad-towfique-imam/webcam-view-pip"
 keywords = ["pip", "picture-in-picture", "webcam", "camera", "windows"]
 
 [dependencies]

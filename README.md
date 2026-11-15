@@ -4,10 +4,10 @@
 your camera in a small window that stays on top of all other apps. You can
 crop the camera image, so the window shows only the area that you select.
 
-[**Download pip-view.exe**](https://github.com/muhammad-towfique-imam/pip-view/releases/latest/download/pip-view.exe)
+[**Download pip-view.exe**](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/pip-view.exe)
 (Windows 10 and 11, 64-bit, no installation) ·
-[Website](https://muhammad-towfique-imam.github.io/pip-view/) ·
-[All releases](https://github.com/muhammad-towfique-imam/pip-view/releases)
+[Website](https://muhammad-towfique-imam.github.io/webcam-view-pip/) ·
+[All releases](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases)
 
 ## Features
 
