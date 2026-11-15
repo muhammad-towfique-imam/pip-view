@@ -14,7 +14,10 @@ In the PiP window:
 
 - Drag the window to move it.
 - Drag the bottom-right corner to resize it.
-- Right-click to open the menu: **Select area**, **Select camera**, **Exit**.
+- Right-click to open the menu: **Select area**, **Select camera**,
+  **Border**, **Exit**.
+- **Border** puts a colored line at the window edge: None, White, Green, Red,
+  Blue, or Yellow. The app saves the selection.
 
 The app saves the camera, the area, and the window position in
 `%APPDATA%\pip-view\config.json`. At the next start, the app opens the PiP

@@ -7,6 +7,7 @@ use eframe::egui::{
     Stroke, StrokeKind, TextureHandle, TextureOptions, ViewportCommand, WindowLevel,
 };
 
+use crate::border::{Border, BORDER_PX};
 use crate::camera::{self, Capture};
 use crate::config::{self, Config};
 use crate::geometry::{fit_aspect, pip_size, position_visible, NormRect, PIP_WIDTH};
@@ -48,6 +49,7 @@ pub struct PipApp {
     startup_pip: bool,
     /// The PiP window waits for the first frame to get its size.
     pip_size_pending: bool,
+    border: Border,
 }
 
 impl PipApp {
@@ -69,6 +71,7 @@ impl PipApp {
             window_size: None,
             startup_pip: false,
             pip_size_pending: false,
+            border: Border::None,
         };
         // Zoom would change the points-to-pixels scale of the saved geometry.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
@@ -79,6 +82,7 @@ impl PipApp {
             app.window_pos = cfg.window_pos;
             app.window_size = cfg.window_size;
             app.area = cfg.area;
+            app.border = cfg.border;
             if let Some(index) = config::find_camera(&app.cameras, &cfg.camera_name) {
                 app.selected = Some(index);
                 app.start_capture(index, &cc.egui_ctx);
@@ -117,7 +121,7 @@ impl PipApp {
             area: self.area,
             window_pos: self.window_pos,
             window_size: self.window_size,
-            border: Default::default(),
+            border: self.border,
         };
         if let Err(e) = config::save(path, &cfg) {
             eprintln!("pip-view: cannot save config: {e:#}");
@@ -322,6 +326,12 @@ impl PipApp {
             ui.painter().image(texture.id(), dest, uv, Color32::WHITE);
         }
 
+        // The border is at the window edge, also over letterbox bars.
+        if let Some(color) = self.border.color() {
+            let width = BORDER_PX / ui.ctx().pixels_per_point();
+            ui.painter().rect_stroke(full, 0.0, Stroke::new(width, color), StrokeKind::Inside);
+        }
+
         // Resize grip mark.
         let c = full.max;
         let grip_stroke = Stroke::new(1.5, Color32::from_gray(160));
@@ -343,6 +353,14 @@ impl PipApp {
             if ui.button("Select camera").clicked() {
                 self.go_to_camera_select(&ctx);
             }
+            ui.menu_button("Border", |ui| {
+                for b in Border::ALL {
+                    if ui.radio(self.border == b, b.label()).clicked() {
+                        self.border = b;
+                        self.save_config();
+                    }
+                }
+            });
             if ui.button("Exit").clicked() {
                 self.read_window_geometry(&ctx);
                 self.save_config();
