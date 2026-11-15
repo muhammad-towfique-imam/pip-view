@@ -58,6 +58,7 @@ The workflow then attaches `webcam-view-pip.exe` to a GitHub release for that ta
 Local build (Linux uses V4L2 for the camera, Windows uses Media Foundation):
 
 ```sh
+cd rust
 cargo test
 cargo build --release
 ```
