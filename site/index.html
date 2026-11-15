@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiP Camera for Windows – Picture-in-Picture Webcam Viewer | pip-view</title>
+<meta name="description" content="pip-view is a free PiP camera app for Windows. It shows your webcam in a small picture-in-picture window that stays on top, and shows only the area of the camera that you select.">
+<link rel="canonical" href="https://muhammad-towfique-imam.github.io/pip-view/">
+<!-- Google Search Console: paste the verification meta tag on the next line. -->
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="pip-view – PiP Camera for Windows">
+<meta property="og:description" content="Free picture-in-picture webcam viewer for Windows. Always on top. Crop the camera to the area you need.">
+<meta property="og:url" content="https://muhammad-towfique-imam.github.io/pip-view/">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "pip-view",
+  "alternateName": "PiP Camera for Windows",
+  "description": "Free picture-in-picture (PiP) webcam viewer for Windows. Shows a selected area of a camera in a small window that stays on top of other apps.",
+  "operatingSystem": "Windows 10, Windows 11",
+  "applicationCategory": "MultimediaApplication",
+  "downloadUrl": "https://github.com/muhammad-towfique-imam/pip-view/releases/latest/download/pip-view.exe",
+  "url": "https://muhammad-towfique-imam.github.io/pip-view/",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I show my webcam in a picture-in-picture window on Windows?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Download pip-view.exe and start it. Select your camera, drag a rectangle on the camera image, and click Confirm. The camera opens in a small window that stays on top of other apps." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I show only a part of the camera image?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. pip-view crops the camera image to the area that you select. Right-click the window and click Select area to change it." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is pip-view free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. pip-view is free and open source under the MIT license." }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to install pip-view?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. pip-view is 1 .exe file. Download it and run it." }
+    }
+  ]
+}
+</script>
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1c1c1e; --muted: #5b5b60; --card: #ffffff;
+    --line: #e2e2de; --accent: #1f6feb; --accent-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416; --fg: #ececee; --muted: #a0a0a8; --card: #1d1d20;
+      --line: #2e2e33; --accent: #4c8dff; --accent-fg: #0b0b0c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 2.2rem; line-height: 1.2; margin: 0 0 12px; }
+  h2 { font-size: 1.35rem; margin: 48px 0 12px; }
+  h3 { font-size: 1.05rem; margin: 20px 0 4px; }
+  p, li { color: var(--fg); }
+  .lead { font-size: 1.15rem; color: var(--muted); margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-block; padding: 12px 20px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-fg); font-weight: 600;
+    text-decoration: none;
+  }
+  .btn.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  .note { color: var(--muted); font-size: 0.9rem; margin-top: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding: 0; list-style: none; }
+  .grid li { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  ol li { margin-bottom: 6px; }
+  a { color: var(--accent); }
+  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PiP Camera for Windows</h1>
+  <p class="lead">pip-view is a free picture-in-picture webcam viewer. It shows your camera in a small window that stays on top of all other apps, and it shows only the area of the camera that you select.</p>
+
+  <div class="cta">
+    <a class="btn" href="https://github.com/muhammad-towfique-imam/pip-view/releases/latest/download/pip-view.exe">Download pip-view.exe</a>
+    <a class="btn secondary" href="https://github.com/muhammad-towfique-imam/pip-view">Source code on GitHub</a>
+  </div>
+  <p class="note">Windows 10 and 11, 64-bit. No installation. Free and open source (MIT).</p>
+
+  <h2>Features</h2>
+  <ul class="grid">
+    <li><strong>Always on top.</strong> The webcam window stays above your other apps and has no border.</li>
+    <li><strong>Crop the camera.</strong> Show only a part of the image: a whiteboard, a desk, a door, or a second screen.</li>
+    <li><strong>Move and resize.</strong> Drag the window to move it. Drag the bottom-right corner to resize it.</li>
+    <li><strong>Colored border.</strong> None, White, Green, Red, Blue, or Yellow.</li>
+    <li><strong>Any camera.</strong> USB webcams, laptop cameras, capture cards, and virtual cameras.</li>
+    <li><strong>Remembers settings.</strong> The camera, the area, and the window position stay the same at the next start.</li>
+  </ul>
+
+  <h2>How to use the PiP webcam window</h2>
+  <ol>
+    <li>Download and start <code>pip-view.exe</code>.</li>
+    <li>Select your camera and click <strong>Next</strong>.</li>
+    <li>Drag a rectangle on the camera image to select the area. Click <strong>Confirm</strong>.</li>
+    <li>The picture-in-picture window opens. Right-click it to select a different area, a different camera, or a border.</li>
+  </ol>
+
+  <h2>Questions</h2>
+  <h3>How do I show my webcam in a picture-in-picture window on Windows?</h3>
+  <p>Download pip-view.exe and start it. Select your camera, drag a rectangle on the camera image, and click Confirm. The camera opens in a small window that stays on top of other apps.</p>
+  <h3>Can I show only a part of the camera image?</h3>
+  <p>Yes. pip-view crops the camera image to the area that you select. Right-click the window and click Select area to change it.</p>
+  <h3>Is pip-view free?</h3>
+  <p>Yes. pip-view is free and open source under the MIT license.</p>
+  <h3>Do I need to install pip-view?</h3>
+  <p>No. pip-view is 1 .exe file. Download it and run it.</p>
+
+  <footer>
+    pip-view · <a href="https://github.com/muhammad-towfique-imam/pip-view/releases">Releases</a> ·
+    <a href="https://github.com/muhammad-towfique-imam/pip-view/blob/main/LICENSE">MIT license</a>
+  </footer>
+</main>
+</body>
+</html>

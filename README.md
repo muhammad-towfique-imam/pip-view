@@ -1,7 +1,24 @@
-# pip-view
+# pip-view — PiP Camera for Windows
 
-A Windows app that shows a selected area of a camera image in a small
-picture-in-picture (PiP) window. The PiP window stays on top of other apps.
+**A free picture-in-picture (PiP) webcam viewer for Windows.** pip-view shows
+your camera in a small window that stays on top of all other apps. You can
+crop the camera image, so the window shows only the area that you select.
+
+[**Download pip-view.exe**](https://github.com/muhammad-towfique-imam/pip-view/releases/latest/download/pip-view.exe)
+(Windows 10 and 11, 64-bit, no installation) ·
+[Website](https://muhammad-towfique-imam.github.io/pip-view/) ·
+[All releases](https://github.com/muhammad-towfique-imam/pip-view/releases)
+
+## Features
+
+- Webcam window that is always on top, with no border.
+- Select any area of the camera image, for example a whiteboard, a desk, a
+  door, or a part of a second screen.
+- Move the window by dragging it. Resize it from the bottom-right corner.
+- Optional colored border: White, Green, Red, Blue, or Yellow.
+- Works with USB webcams, laptop cameras, capture cards, and virtual cameras.
+- The app remembers the camera, the area, and the window position.
+- 1 small `.exe` file. Free and open source (MIT license).
 
 ## Use
 
@@ -44,3 +61,7 @@ Local build (Linux uses V4L2 for the camera, Windows uses Media Foundation):
 cargo test
 cargo build --release
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
