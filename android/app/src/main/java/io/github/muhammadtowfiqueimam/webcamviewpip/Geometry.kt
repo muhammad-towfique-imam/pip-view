@@ -78,3 +78,40 @@ fun innerBox(area: NormRect, winW: Int, winH: Int): Box {
 /** The window position, moved so that the window stays fully on the screen. */
 fun clampPosition(x: Int, y: Int, w: Int, h: Int, screenW: Int, screenH: Int): Pair<Int, Int> =
     Pair(x.coerceIn(0, maxOf(0, screenW - w)), y.coerceIn(0, maxOf(0, screenH - h)))
+
+/** This area after a clockwise rotation of the image by [degrees] (a multiple of 90). */
+fun NormRect.rotate(degrees: Int): NormRect = when (((degrees % 360) + 360) % 360) {
+    90 -> NormRect(1f - y - h, x, h, w)
+    180 -> NormRect(1f - x - w, 1f - y - h, w, h)
+    270 -> NormRect(y, 1f - x - w, h, w)
+    else -> this
+}
+
+/** This area after a horizontal mirror of the image. */
+fun NormRect.flipX(): NormRect = NormRect(1f - x - w, y, w, h)
+
+/**
+ * The area as it shows on the screen. [degrees] is the clockwise rotation that
+ * makes the camera buffer upright, and [mirror] is true for a front camera.
+ */
+fun bufferToDisplay(area: NormRect, degrees: Int, mirror: Boolean): NormRect {
+    val r = area.rotate(degrees)
+    return if (mirror) r.flipX() else r
+}
+
+/** The opposite of [bufferToDisplay]. */
+fun displayToBuffer(area: NormRect, degrees: Int, mirror: Boolean): NormRect =
+    (if (mirror) area.flipX() else area).rotate(-degrees)
+
+/** The size of the camera image on the screen, after the rotation. */
+fun displaySize(bufferW: Int, bufferH: Int, degrees: Int): Pair<Int, Int> =
+    if (degrees % 180 == 0) Pair(bufferW, bufferH) else Pair(bufferH, bufferW)
+
+/**
+ * The window size for a new aspect. If the orientation (wide or tall) changes,
+ * the old height becomes the new width, so the window turns with the image.
+ */
+fun fitWindowToAspect(w: Int, h: Int, aspect: Float, minW: Int, maxW: Int, maxH: Int): Pair<Int, Int> {
+    val width = if ((aspect >= 1f) == (w >= h)) w else h
+    return resizeKeepAspect(width, aspect, minW, maxW, maxH)
+}

@@ -19,6 +19,8 @@
     <string name="camera_external">USB camera</string>
     <string name="border">Border</string>
     <string name="exit">Exit</string>
+    <string name="camera_in_use">Another app uses the camera.</string>
+    <string name="camera_stopped">The camera is not available. Tap for the menu.</string>
     <string name="channel_name">Camera window</string>
     <string name="notification_title">The camera window is open</string>
     <string name="notification_text">Tap to select a different area.</string>

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +23,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -37,9 +39,16 @@ class SetupActivity : ComponentActivity() {
     private var provider: ProcessCameraProvider? = null
     private var cameras: List<CameraEntry> = emptyList()
     private var cameraId: String? = null
+    /** The selected area in camera buffer coordinates. */
     private var area: NormRect = NormRect.FULL
-    /** Size of the displayed camera image in pixels, known after the preview starts. */
-    private var imageSize: Pair<Int, Int>? = null
+    /** The camera buffer size in pixels, known after the preview starts. */
+    private var bufferSize: Pair<Int, Int>? = null
+    /** The clockwise rotation from the camera buffer to the screen. */
+    private var degrees = 0
+    /** True for a front camera: the preview shows a mirror image. */
+    private var mirror = false
+    private var preview: Preview? = null
+    private var selectView: AreaSelectView? = null
     private var step = Step.CAMERA
     /** Open the PiP window at once if the saved settings are complete. */
     private var autoStart = false
@@ -56,6 +65,7 @@ class SetupActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        stopPipIfAsked(intent)
         val saved = Prefs.load(this)
         cameraId = saved?.cameraId
         area = saved?.area ?: NormRect.FULL
@@ -67,6 +77,39 @@ class SetupActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms += Manifest.permission.POST_NOTIFICATIONS
         askPermissions.launch(perms.toTypedArray())
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        stopPipIfAsked(intent)
+        autoStart = false
+        if (provider == null) return
+        if (intent.getStringExtra(EXTRA_STEP) == STEP_AREA && cameraId != null) showArea() else showCameras()
+    }
+
+    /** The PiP window and the setup screen must not use the camera at the same time. */
+    private fun stopPipIfAsked(intent: Intent) {
+        if (intent.getStringExtra(EXTRA_STEP) != null) stopService(Intent(this, OverlayService::class.java))
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The rotation changes the image on the screen. Keep the area and start the preview again.
+        if (step == Step.AREA && provider != null) {
+            selectView?.let { area = displayToBuffer(it.area, degrees, mirror) }
+            showArea()
+        }
+    }
+
+    private fun stopPreview() {
+        preview?.let { provider?.unbind(it) }
+        preview = null
+        selectView = null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotation(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display?.rotation ?: 0 else windowManager.defaultDisplay.rotation
 
     private fun hasCamera() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -140,7 +183,7 @@ class SetupActivity : ComponentActivity() {
 
     private fun showCameras() {
         step = Step.CAMERA
-        provider?.unbindAll()
+        stopPreview()
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(24), dp(24), dp(24))
@@ -174,13 +217,15 @@ class SetupActivity : ComponentActivity() {
         step = Step.AREA
         val p = provider ?: return
         val id = cameraId ?: return showCameras()
-        imageSize = null
+        stopPreview()
+        bufferSize = null
 
         val previewView = PreviewView(this).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             scaleType = PreviewView.ScaleType.FIT_CENTER
         }
-        val selectView = AreaSelectView(this).apply { area = this@SetupActivity.area }
+        val selectView = AreaSelectView(this)
+        this.selectView = selectView
         val stack = FrameLayout(this).apply {
             addView(previewView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(selectView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -211,24 +256,26 @@ class SetupActivity : ComponentActivity() {
         hint.setTextColor(0xFFFFFFFF.toInt())
         setScreen(layout)
 
-        val preview = Preview.Builder().build()
+        val preview = Preview.Builder().setTargetRotation(displayRotation()).build()
+        this.preview = preview
         preview.surfaceProvider = previewView.surfaceProvider
         previewView.previewStreamState.observe(this) { state ->
-            if (state != PreviewView.StreamState.STREAMING || step != Step.AREA) return@observe
-            val info = preview.resolutionInfo ?: return@observe
-            val r = info.resolution
-            val size = if (info.rotationDegrees % 180 == 0) Pair(r.width, r.height) else Pair(r.height, r.width)
-            imageSize = size
-            selectView.imageAspect = size.first.toFloat() / size.second
+            if (state != PreviewView.StreamState.STREAMING || this.preview !== preview) return@observe
+            val r = preview.resolutionInfo?.resolution ?: return@observe
+            bufferSize = Pair(r.width, r.height)
+            val (w, h) = displaySize(r.width, r.height, degrees)
+            selectView.imageAspect = w.toFloat() / h
             confirm.isEnabled = true
         }
         confirm.setOnClickListener {
-            area = selectView.area
+            area = displayToBuffer(selectView.area, degrees, mirror)
             confirm()
         }
         try {
-            p.unbindAll()
-            p.bindToLifecycle(this, selectorFor(id), preview)
+            val camera = p.bindToLifecycle(this, selectorFor(id), preview)
+            degrees = camera.cameraInfo.getSensorRotationDegrees(displayRotation())
+            mirror = camera.cameraInfo.lensFacing == CameraSelector.LENS_FACING_FRONT
+            selectView.area = bufferToDisplay(area, degrees, mirror)
         } catch (e: Exception) {
             showMessage(getString(R.string.camera_error, e.message ?: e.javaClass.simpleName), getString(R.string.back)) {
                 showCameras()
@@ -239,7 +286,7 @@ class SetupActivity : ComponentActivity() {
     /** Saves the settings and opens the PiP window. Asks for the overlay permission first. */
     private fun confirm() {
         val id = cameraId ?: return
-        val (imgW, imgH) = imageSize ?: return
+        val (bufferW, bufferH) = bufferSize ?: return
         if (!Settings.canDrawOverlays(this)) {
             showMessage(getString(R.string.overlay_permission), getString(R.string.open_settings)) {
                 askOverlay.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -248,18 +295,19 @@ class SetupActivity : ComponentActivity() {
         }
         val old = Prefs.load(this)
         val (screenW, screenH) = screenSize(this)
-        val aspect = area.aspect(imgW, imgH)
+        val (imgW, imgH) = displaySize(bufferW, bufferH, degrees)
+        val aspect = bufferToDisplay(area, degrees, mirror).aspect(imgW, imgH)
         val shortSide = minOf(screenW, screenH)
         val (w, h) = pipSize(aspect, (shortSide * PIP_FRACTION).roundToInt(), (screenW * MAX_FRACTION).roundToInt(),
             (screenH * MAX_FRACTION).roundToInt())
         val margin = dp(16)
         val (x, y) = clampPosition(old?.windowX ?: (screenW - w - margin), old?.windowY ?: dp(96), w, h, screenW, screenH)
-        Prefs.save(this, Config(id, area, x, y, w, h, old?.border ?: Border.NONE))
+        Prefs.save(this, Config(id, area, x, y, w, h, old?.border ?: Border.NONE, bufferW, bufferH))
         startPip()
     }
 
     private fun startPip() {
-        provider?.unbindAll()
+        stopPreview()
         ContextCompat.startForegroundService(this, Intent(this, OverlayService::class.java))
         finish()
     }

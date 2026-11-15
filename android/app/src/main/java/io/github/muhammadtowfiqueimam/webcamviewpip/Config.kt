@@ -1,6 +1,10 @@
 package io.github.muhammadtowfiqueimam.webcamviewpip
 
-/** The saved settings. The window values are in physical pixels. */
+/**
+ * The saved settings. [area] is in camera buffer coordinates, before the
+ * rotation to the screen. The buffer size is the camera image size in pixels.
+ * The window values are in physical pixels.
+ */
 data class Config(
     val cameraId: String,
     val area: NormRect,
@@ -9,6 +13,8 @@ data class Config(
     val windowW: Int,
     val windowH: Int,
     val border: Border,
+    val bufferW: Int,
+    val bufferH: Int,
 ) {
     fun toMap(): Map<String, String> = mapOf(
         "camera_id" to cameraId,
@@ -21,6 +27,8 @@ data class Config(
         "window_w" to windowW.toString(),
         "window_h" to windowH.toString(),
         "border" to border.label,
+        "buffer_w" to bufferW.toString(),
+        "buffer_h" to bufferH.toString(),
     )
 
     companion object {
@@ -41,6 +49,9 @@ data class Config(
             val w = int("window_w") ?: return null
             val h = int("window_h") ?: return null
             if (w <= 0 || h <= 0) return null
+            val bufferW = int("buffer_w") ?: return null
+            val bufferH = int("buffer_h") ?: return null
+            if (bufferW <= 0 || bufferH <= 0) return null
             return Config(
                 cameraId = cameraId,
                 area = area,
@@ -49,6 +60,8 @@ data class Config(
                 windowW = w,
                 windowH = h,
                 border = Border.parse(str("border")),
+                bufferW = bufferW,
+                bufferH = bufferH,
             )
         }
     }

@@ -12,8 +12,11 @@ import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
 import android.os.Build
+import android.provider.Settings
 import android.view.ContextThemeWrapper
+import android.view.Display
 import android.view.Gravity
 import android.view.Menu
 import android.view.MotionEvent
@@ -22,6 +25,10 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.PopupMenu
+import android.widget.TextView
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraState
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -39,20 +46,41 @@ class OverlayService : LifecycleService() {
     private var previewView: PreviewView? = null
     private var borderView: BorderView? = null
     private var params: WindowManager.LayoutParams? = null
+    private var messageView: TextView? = null
+    private var menu: PopupMenu? = null
     private var config: Config? = null
     private var provider: ProcessCameraProvider? = null
+    private var preview: Preview? = null
+    private var camera: Camera? = null
+    private var rotation = -1
+
+    /** Follows the screen rotation, also a 180 degree turn that gives no configuration change. */
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == Display.DEFAULT_DISPLAY) onRotation()
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WindowManager::class.java)
+        getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, null)
     }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotation(): Int =
+        getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         startInForeground()
-        if (intent?.action == ACTION_EXIT) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_EXIT -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
         val saved = Prefs.load(this)
         if (saved == null) {
@@ -60,7 +88,10 @@ class OverlayService : LifecycleService() {
             return START_NOT_STICKY
         }
         config = saved
-        showWindow(saved)
+        if (!showWindow(saved)) {
+            openSetup(SetupActivity.STEP_AREA)
+            return START_NOT_STICKY
+        }
         bindCamera(saved.cameraId)
         return START_NOT_STICKY
     }
@@ -74,6 +105,7 @@ class OverlayService : LifecycleService() {
         val exit = PendingIntent.getService(
             this, 1, Intent(this, OverlayService::class.java).setAction(ACTION_EXIT), flags,
         )
+        // The setup screen stops this service, so that only 1 of them uses the camera.
         val open = PendingIntent.getActivity(
             this, 2, SetupActivity.intent(this, SetupActivity.STEP_AREA), flags,
         )
@@ -90,8 +122,10 @@ class OverlayService : LifecycleService() {
     }
 
     @SuppressLint("ClickableViewAccessibility") // The touch handler calls performClick for a tap.
-    private fun showWindow(c: Config) {
+    /** Adds the PiP window. Returns false if Android does not let the app show it. */
+    private fun showWindow(c: Config): Boolean {
         removeWindow()
+        if (!Settings.canDrawOverlays(this)) return false
         val (screenW, screenH) = screenSize(this)
         val (w, h) = resizeKeepAspect(c.windowW, c.windowW.toFloat() / c.windowH, minWidth(), screenW, screenH)
         val (x, y) = clampPosition(c.windowX, c.windowY, w, h, screenW, screenH)
@@ -110,28 +144,54 @@ class OverlayService : LifecycleService() {
             scaleType = PreviewView.ScaleType.FILL_CENTER
         }
         val bv = BorderView(this).apply { border = c.border }
+        val pad = (8 * resources.displayMetrics.density).roundToInt()
+        val message = TextView(this).apply {
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            setPadding(pad, pad, pad, pad)
+            visibility = View.GONE
+        }
+        val match = FrameLayout.LayoutParams.MATCH_PARENT
         val frame = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
             clipChildren = true
             addView(pv)
-            addView(bv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(message, FrameLayout.LayoutParams(match, match))
+            addView(bv, FrameLayout.LayoutParams(match, match))
         }
         frame.setOnTouchListener(TouchHandler())
         frame.setOnClickListener { showMenu(it) }
         root = frame
         previewView = pv
         borderView = bv
+        messageView = message
         params = lp
         layoutPreview()
-        wm.addView(frame, lp)
+        try {
+            wm.addView(frame, lp)
+        } catch (e: RuntimeException) {
+            root = null
+            return false
+        }
+        return true
     }
+
+    /** The clockwise rotation from the camera buffer to the screen, or null before the camera is bound. */
+    private fun degrees(): Int? = camera?.cameraInfo?.getSensorRotationDegrees(displayRotation())
+
+    private fun mirror() = camera?.cameraInfo?.lensFacing == CameraSelector.LENS_FACING_FRONT
 
     /** Places the full camera image so that only the selected area is visible. */
     private fun layoutPreview() {
         val lp = params ?: return
         val c = config ?: return
-        val box = innerBox(c.area, lp.width, lp.height)
-        previewView?.layoutParams = FrameLayout.LayoutParams(box.width.roundToInt(), box.height.roundToInt()).apply {
+        val deg = degrees()
+        val pv = previewView ?: return
+        // Before the camera is bound, the rotation is not known.
+        pv.visibility = if (deg == null) View.INVISIBLE else View.VISIBLE
+        if (deg == null) return
+        val box = innerBox(bufferToDisplay(c.area, deg, mirror()), lp.width, lp.height)
+        pv.layoutParams = FrameLayout.LayoutParams(box.width.roundToInt(), box.height.roundToInt()).apply {
             leftMargin = box.left.roundToInt()
             topMargin = box.top.roundToInt()
         }
@@ -147,15 +207,61 @@ class OverlayService : LifecycleService() {
                 openSetup(SetupActivity.STEP_CAMERA)
                 return@addListener
             }
-            val preview = Preview.Builder().build()
-            preview.surfaceProvider = pv.surfaceProvider
+            preview?.let { p.unbind(it) }
+            val r = displayRotation()
+            rotation = r
+            val newPreview = Preview.Builder().setTargetRotation(r).build()
+            newPreview.surfaceProvider = pv.surfaceProvider
+            preview = newPreview
             try {
-                p.unbindAll()
-                p.bindToLifecycle(this, selectorFor(id), preview)
+                val cam = p.bindToLifecycle(this, selectorFor(id), newPreview)
+                camera = cam
+                cam.cameraInfo.cameraState.observe(this) { showCameraState(it) }
+                fitWindow()
             } catch (e: Exception) {
                 openSetup(SetupActivity.STEP_CAMERA)
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /** Shows a message on the window if the camera is not available. */
+    private fun showCameraState(state: CameraState) {
+        val view = messageView ?: return
+        val error = state.error
+        val text = when {
+            error?.code == CameraState.ERROR_CAMERA_IN_USE || error?.code == CameraState.ERROR_MAX_CAMERAS_IN_USE ->
+                getString(R.string.camera_in_use)
+            error != null -> getString(R.string.camera_stopped)
+            state.type == CameraState.Type.CLOSED -> getString(R.string.camera_stopped)
+            else -> null
+        }
+        view.text = text
+        view.visibility = if (text == null) View.GONE else View.VISIBLE
+    }
+
+    /** Sets the window aspect to the aspect of the area on the screen, for the current rotation. */
+    private fun fitWindow() {
+        val lp = params ?: return
+        val c = config ?: return
+        val view = root ?: return
+        val deg = degrees() ?: return
+        val (imgW, imgH) = displaySize(c.bufferW, c.bufferH, deg)
+        val aspect = bufferToDisplay(c.area, deg, mirror()).aspect(imgW, imgH)
+        val (screenW, screenH) = screenSize(this)
+        val (w, h) = fitWindowToAspect(lp.width, lp.height, aspect, minWidth(), screenW, screenH)
+        val (x, y) = clampPosition(lp.x, lp.y, w, h, screenW, screenH)
+        lp.width = w; lp.height = h; lp.x = x; lp.y = y
+        layoutPreview()
+        wm.updateViewLayout(view, lp)
+    }
+
+    private fun onRotation() {
+        val r = displayRotation()
+        if (r == rotation) return
+        rotation = r
+        preview?.targetRotation = r
+        fitWindow()
+        saveGeometry()
     }
 
     private fun minWidth() = (MIN_WIDTH_DP * resources.displayMetrics.density).roundToInt()
@@ -170,7 +276,10 @@ class OverlayService : LifecycleService() {
 
     private fun showMenu(anchor: View) {
         val themed = ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault)
+        this.menu?.dismiss()
         val menu = PopupMenu(themed, anchor, Gravity.CENTER)
+        this.menu = menu
+        menu.setOnDismissListener { if (this.menu === it) this.menu = null }
         menu.menu.add(Menu.NONE, MENU_AREA, 1, R.string.select_area)
         menu.menu.add(Menu.NONE, MENU_CAMERA, 2, R.string.select_camera)
         val sub = menu.menu.addSubMenu(Menu.NONE, Menu.NONE, 3, R.string.border)
@@ -204,25 +313,24 @@ class OverlayService : LifecycleService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val lp = params ?: return
-        val view = root ?: return
-        val (screenW, screenH) = screenSize(this)
-        val (w, h) = resizeKeepAspect(lp.width, lp.width.toFloat() / lp.height, minWidth(), screenW, screenH)
-        val (x, y) = clampPosition(lp.x, lp.y, w, h, screenW, screenH)
-        lp.width = w; lp.height = h; lp.x = x; lp.y = y
-        layoutPreview()
-        wm.updateViewLayout(view, lp)
+        onRotation()
+        // The screen size can change without a rotation, for example on a foldable.
+        fitWindow()
     }
 
     private fun removeWindow() {
+        menu?.dismiss()
+        menu = null
         root?.let { wm.removeView(it) }
         root = null
         previewView = null
         borderView = null
+        messageView = null
     }
 
     override fun onDestroy() {
-        provider?.unbindAll()
+        getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
+        // LifecycleService unbinds its own camera use cases. Do not unbind all: the setup screen can use the camera now.
         removeWindow()
         super.onDestroy()
     }
@@ -272,6 +380,7 @@ class OverlayService : LifecycleService() {
                     wm.updateViewLayout(v, lp)
                 }
                 MotionEvent.ACTION_UP -> if (moved) saveGeometry() else v.performClick()
+                MotionEvent.ACTION_CANCEL -> if (moved) saveGeometry()
             }
             return true
         }
