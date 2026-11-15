@@ -9,10 +9,12 @@ use eframe::egui::{
 
 use crate::camera::{self, Capture};
 use crate::config::{self, Config};
-use crate::geometry::{fit_aspect, NormRect};
+use crate::geometry::{fit_aspect, pip_size, position_visible, NormRect, PIP_WIDTH};
 
-/// Initial PiP window width in points.
-const PIP_WIDTH: f32 = 320.0;
+/// Smallest PiP window size in points, so that it can still be grabbed.
+const MIN_PIP: [f32; 2] = [64.0, 48.0];
+/// Largest initial PiP size, as a fraction of the monitor size.
+const MAX_PIP_FRACTION: f32 = 0.8;
 /// Side of the resize grip square in the bottom-right corner of the PiP.
 const GRIP: f32 = 16.0;
 /// Window size in the camera select and area select modes.
@@ -38,8 +40,12 @@ pub struct PipApp {
     drag_start: Option<(f32, f32)>,
     error: Option<String>,
     config_path: Option<PathBuf>,
+    /// Saved PiP position in physical pixels.
     window_pos: Option<(f32, f32)>,
+    /// Saved PiP inner size in physical pixels.
     window_size: Option<(f32, f32)>,
+    /// Enter PiP mode on the first frame, when the display scale is known.
+    startup_pip: bool,
     /// The PiP window waits for the first frame to get its size.
     pip_size_pending: bool,
 }
@@ -61,8 +67,11 @@ impl PipApp {
             config_path: config::default_path(),
             window_pos: None,
             window_size: None,
+            startup_pip: false,
             pip_size_pending: false,
         };
+        // Zoom would change the points-to-pixels scale of the saved geometry.
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         app.refresh_cameras();
 
         let saved = app.config_path.as_deref().and_then(config::load);
@@ -73,7 +82,7 @@ impl PipApp {
             if let Some(index) = config::find_camera(&app.cameras, &cfg.camera_name) {
                 app.selected = Some(index);
                 app.start_capture(index, &cc.egui_ctx);
-                app.enter_pip(&cc.egui_ctx);
+                app.startup_pip = true;
             }
         }
         app
@@ -114,30 +123,55 @@ impl PipApp {
         }
     }
 
-    /// Reads the current PiP window position and size.
+    /// Reads the current PiP window position and size, in physical pixels.
+    /// Pixels do not change when the window opens on a monitor with a
+    /// different display scale.
     fn read_window_geometry(&mut self, ctx: &egui::Context) {
+        let ppp = ctx.pixels_per_point();
         let (outer, inner) = ctx.input(|i| (i.viewport().outer_rect, i.viewport().inner_rect));
         if let Some(r) = outer {
-            self.window_pos = Some((r.min.x, r.min.y));
+            self.window_pos = Some((r.min.x * ppp, r.min.y * ppp));
         }
         if let Some(r) = inner {
-            self.window_size = Some((r.width(), r.height()));
+            self.window_size = Some((r.width() * ppp, r.height() * ppp));
         }
     }
 
-    fn pip_size_for_area(&self) -> Option<egui::Vec2> {
+    /// The monitor size in points, if known.
+    fn monitor_size(ctx: &egui::Context) -> Option<egui::Vec2> {
+        ctx.input(|i| i.viewport().monitor_size)
+    }
+
+    /// The initial PiP size in points for the current area.
+    fn pip_size_for_area(&self, ctx: &egui::Context) -> Option<egui::Vec2> {
         let (w, h) = self.frame_size?;
-        Some(vec2(PIP_WIDTH, PIP_WIDTH / self.area.aspect(w, h)))
+        let max = Self::monitor_size(ctx)
+            .map(|m| (m.x * MAX_PIP_FRACTION, m.y * MAX_PIP_FRACTION))
+            .unwrap_or((1536.0, 864.0));
+        let (pw, ph) = pip_size(self.area.aspect(w, h), max);
+        Some(vec2(pw, ph))
     }
 
     fn enter_pip(&mut self, ctx: &egui::Context) {
         self.mode = Mode::Pip;
         ctx.send_viewport_cmd(ViewportCommand::Decorations(false));
         ctx.send_viewport_cmd(ViewportCommand::WindowLevel(WindowLevel::AlwaysOnTop));
-        if let Some((x, y)) = self.window_pos {
-            ctx.send_viewport_cmd(ViewportCommand::OuterPosition(pos2(x, y)));
+        ctx.send_viewport_cmd(ViewportCommand::MinInnerSize(MIN_PIP.into()));
+        let ppp = ctx.pixels_per_point();
+        if let Some(pos) = self.window_pos {
+            let size_px = self.window_size.unwrap_or((PIP_WIDTH * ppp, PIP_WIDTH * ppp));
+            if position_visible(pos, size_px, desktop_rect_px()) {
+                ctx.send_viewport_cmd(ViewportCommand::OuterPosition(pos2(pos.0 / ppp, pos.1 / ppp)));
+            } else {
+                // The monitor was removed or the layout changed.
+                self.window_pos = None;
+            }
         }
-        let size = self.window_size.map(|(w, h)| vec2(w, h)).or_else(|| self.pip_size_for_area());
+        let saved_size = self.window_size.map(|(w, h)| {
+            let size = vec2(w / ppp, h / ppp);
+            Self::monitor_size(ctx).map_or(size, |m| size.min(m))
+        });
+        let size = saved_size.or_else(|| self.pip_size_for_area(ctx));
         match size {
             Some(size) => {
                 ctx.send_viewport_cmd(ViewportCommand::InnerSize(size));
@@ -187,7 +221,7 @@ impl PipApp {
             None => self.texture = Some(ctx.load_texture("camera", image, TextureOptions::LINEAR)),
         }
         if self.mode == Mode::Pip && self.pip_size_pending {
-            if let Some(size) = self.pip_size_for_area() {
+            if let Some(size) = self.pip_size_for_area(ctx) {
                 ctx.send_viewport_cmd(ViewportCommand::InnerSize(size));
                 self.pip_size_pending = false;
             }
@@ -295,14 +329,10 @@ impl PipApp {
         }
 
         if response.drag_started_by(PointerButton::Primary) {
-            let in_grip = response
-                .interact_pointer_pos()
-                .is_some_and(|p| p.x >= c.x - GRIP && p.y >= c.y - GRIP);
-            if in_grip {
-                ctx.send_viewport_cmd(ViewportCommand::BeginResize(ResizeDirection::SouthEast));
-            } else {
-                ctx.send_viewport_cmd(ViewportCommand::StartDrag);
-            }
+            // The drag starts only after the pointer moved a few points, so
+            // use the press position, not the current position.
+            let press = ui.input(|i| i.pointer.press_origin());
+            ctx.send_viewport_cmd(pip_drag_command(press, c));
         }
 
         response.context_menu(|ui| {
@@ -321,6 +351,34 @@ impl PipApp {
     }
 }
 
+/// The command for a PiP drag that started with a press at `press`: resize
+/// if the press was in the grip at the bottom-right `corner`, else move.
+fn pip_drag_command(press: Option<Pos2>, corner: Pos2) -> ViewportCommand {
+    let in_grip = press.is_some_and(|p| p.x >= corner.x - GRIP && p.y >= corner.y - GRIP);
+    if in_grip {
+        ViewportCommand::BeginResize(ResizeDirection::SouthEast)
+    } else {
+        ViewportCommand::StartDrag
+    }
+}
+
+/// The bounding rectangle (x, y, w, h) of all monitors in physical pixels.
+#[cfg(windows)]
+fn desktop_rect_px() -> (f32, f32, f32, f32) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    };
+    // SAFETY: GetSystemMetrics has no preconditions.
+    let m = |i| unsafe { GetSystemMetrics(i) } as f32;
+    (m(SM_XVIRTUALSCREEN), m(SM_YVIRTUALSCREEN), m(SM_CXVIRTUALSCREEN), m(SM_CYVIRTUALSCREEN))
+}
+
+/// Other platforms: accept any position in a large range.
+#[cfg(not(windows))]
+fn desktop_rect_px() -> (f32, f32, f32, f32) {
+    (-16000.0, -16000.0, 32000.0, 32000.0)
+}
+
 /// The UV rectangle of the full texture.
 fn full_uv() -> Rect {
     Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))
@@ -335,6 +393,10 @@ fn place(container: Rect, aspect: f32) -> Rect {
 impl eframe::App for PipApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        if self.startup_pip {
+            self.startup_pip = false;
+            self.enter_pip(&ctx);
+        }
         self.poll_capture(&ctx);
 
         if self.mode == Mode::Pip && ctx.input(|i| i.viewport().close_requested()) {
@@ -355,5 +417,30 @@ impl eframe::App for PipApp {
                     .show(ui, |ui| self.ui_pip(ui));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CORNER: Pos2 = pos2(320.0, 180.0);
+
+    #[test]
+    fn press_in_grip_resizes() {
+        assert_eq!(
+            pip_drag_command(Some(pos2(316.0, 176.0)), CORNER),
+            ViewportCommand::BeginResize(ResizeDirection::SouthEast)
+        );
+    }
+
+    #[test]
+    fn press_outside_grip_moves() {
+        assert_eq!(pip_drag_command(Some(pos2(100.0, 100.0)), CORNER), ViewportCommand::StartDrag);
+    }
+
+    #[test]
+    fn unknown_press_moves() {
+        assert_eq!(pip_drag_command(None, CORNER), ViewportCommand::StartDrag);
     }
 }
