@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
+use crate::border::Border;
 use crate::geometry::NormRect;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -13,6 +14,9 @@ pub struct Config {
     pub area: NormRect,
     pub window_pos: Option<(f32, f32)>,
     pub window_size: Option<(f32, f32)>,
+    /// Missing in a v0.1.0 config file; then `Border::None`.
+    #[serde(default)]
+    pub border: Border,
 }
 
 /// `%APPDATA%\pip-view\config.json` on Windows.
@@ -52,6 +56,7 @@ mod tests {
             area: NormRect { x: 0.25, y: 0.5, w: 0.25, h: 0.125 },
             window_pos: Some((10.0, 20.0)),
             window_size: Some((320.0, 180.0)),
+            border: Border::Red,
         }
     }
 
@@ -82,6 +87,34 @@ mod tests {
         let path = dir.path().join("config.json");
         std::fs::write(&path, "{not json").unwrap();
         assert!(load(&path).is_none());
+    }
+
+    /// The config format of v0.1.0, which has no "border" key.
+    const V010_JSON: &str = r#"{
+        "camera_name": "Logitech C920",
+        "area": { "x": 0.25, "y": 0.5, "w": 0.25, "h": 0.125 },
+        "window_pos": [10.0, 20.0],
+        "window_size": [320.0, 180.0]
+    }"#;
+
+    #[test]
+    fn old_config_without_border_loads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, V010_JSON).unwrap();
+        let cfg = load(&path).expect("old config must load");
+        assert_eq!(cfg.border, Border::None);
+        assert_eq!(cfg.camera_name, "Logitech C920");
+    }
+
+    #[test]
+    fn unknown_border_loads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let json = V010_JSON.replacen('{', r#"{ "border": "Purple","#, 1);
+        std::fs::write(&path, json).unwrap();
+        let cfg = load(&path).expect("config with unknown border must load");
+        assert_eq!(cfg.border, Border::None);
     }
 
     #[test]

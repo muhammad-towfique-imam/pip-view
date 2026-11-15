@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod app;
+mod border;
 mod camera;
 mod config;
 mod geometry;

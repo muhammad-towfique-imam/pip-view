@@ -117,6 +117,7 @@ impl PipApp {
             area: self.area,
             window_pos: self.window_pos,
             window_size: self.window_size,
+            border: Default::default(),
         };
         if let Err(e) = config::save(path, &cfg) {
             eprintln!("pip-view: cannot save config: {e:#}");
