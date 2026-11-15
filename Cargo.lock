@@ -2910,20 +2910,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
-name = "pip-view"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "directories",
- "eframe",
- "nokhwa",
- "serde",
- "serde_json",
- "tempfile",
- "windows",
-]
-
-[[package]]
 name = "piper"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4216,6 +4202,20 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "url",
  "web-sys",
+]
+
+[[package]]
+name = "webcam-view-pip"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "directories",
+ "eframe",
+ "nokhwa",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "windows",
 ]
 
 [[package]]

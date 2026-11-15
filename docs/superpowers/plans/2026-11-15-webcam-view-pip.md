@@ -1,4 +1,4 @@
-# pip-view Implementation Plan
+# webcam-view-pip Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,13 +8,13 @@
 
 **Tech Stack:** Rust stable, eframe/egui 0.37, nokhwa 0.10 (`input-native`), serde/serde_json, directories 6, anyhow.
 
-**Spec:** `docs/superpowers/specs/2026-11-15-pip-view-design.md`
+**Spec:** `docs/superpowers/specs/2026-11-15-webcam-view-pip-design.md`
 
 ## Global Constraints
 
-- Release target: Windows x86_64, 1 file `pip-view.exe`, no installer.
+- Release target: Windows x86_64, 1 file `webcam-view-pip.exe`, no installer.
 - `#![windows_subsystem = "windows"]` in `src/main.rs`.
-- Config path: `%APPDATA%\pip-view\config.json` (via `directories::ProjectDirs::from("", "", "pip-view")`, `config_dir()`).
+- Config path: `%APPDATA%\webcam-view-pip\config.json` (via `directories::ProjectDirs::from("", "", "webcam-view-pip")`, `config_dir()`).
 - Area is stored normalized (0.0–1.0 for x, y, width, height).
 - Initial PiP width: 320 px; height from the area aspect ratio.
 - PiP resize grip: bottom-right 16 px square.
@@ -47,7 +47,7 @@
 
 - [ ] **Step 1: Create the scaffold**
 
-`Cargo.toml`: package `pip-view`, edition 2021. Dependencies: `eframe = "0.37"`, `nokhwa = { version = "0.10", features = ["input-native"] }`, `serde = { version = "1", features = ["derive"] }`, `serde_json = "1"`, `directories = "6"`, `anyhow = "1"`. Dev-dependency: `tempfile = "3"`. Release profile: `lto = true`, `strip = true`.
+`Cargo.toml`: package `webcam-view-pip`, edition 2021. Dependencies: `eframe = "0.37"`, `nokhwa = { version = "0.10", features = ["input-native"] }`, `serde = { version = "1", features = ["derive"] }`, `serde_json = "1"`, `directories = "6"`, `anyhow = "1"`. Dev-dependency: `tempfile = "3"`. Release profile: `lto = true`, `strip = true`.
 `.gitignore`: `/target`.
 `src/main.rs`: `#![windows_subsystem = "windows"]`, `mod geometry;`, and an empty `fn main() {}` for now.
 Run `git init` and keep the existing `docs/`.
@@ -176,7 +176,7 @@ If `capture.latest()` has a new `seq`, upload it with `ColorImage::from_rgba_unm
 
 - [ ] **Step 6: Save window geometry** — in PiP mode, in `on_exit` and when leaving PiP, read `ctx.input(|i| i.viewport().outer_rect / inner_rect)` and save `window_pos` and `window_size`.
 
-- [ ] **Step 7: `main.rs`** — `eframe::run_native("pip-view", NativeOptions { viewport: ViewportBuilder::default().with_inner_size([800.0, 600.0]).with_title("pip-view"), ..Default::default() }, Box::new(|cc| Ok(Box::new(app::PipApp::new(cc)))))`.
+- [ ] **Step 7: `main.rs`** — `eframe::run_native("webcam-view-pip", NativeOptions { viewport: ViewportBuilder::default().with_inner_size([800.0, 600.0]).with_title("webcam-view-pip"), ..Default::default() }, Box::new(|cc| Ok(Box::new(app::PipApp::new(cc)))))`.
 
 If eframe 0.37 changed the `App` trait or a `ViewportCommand` name, follow the 0.37 API and keep the behavior.
 
@@ -190,7 +190,7 @@ If eframe 0.37 changed the `App` trait or a `ViewportCommand` name, follow the 0
 
 - [ ] **Step 1: Write the workflow**
 
-Triggers: `push: tags: ['v*']`, `pull_request`, `workflow_dispatch`. `permissions: contents: write`. 1 job on `windows-latest`: `actions/checkout@v4`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`, `cargo test --locked`, `cargo build --release --locked`, `actions/upload-artifact@v4` (`target/release/pip-view.exe`), and on `startsWith(github.ref, 'refs/tags/v')`: `softprops/action-gh-release@v2` with `files: target/release/pip-view.exe`. Commit `Cargo.lock` so `--locked` works.
+Triggers: `push: tags: ['v*']`, `pull_request`, `workflow_dispatch`. `permissions: contents: write`. 1 job on `windows-latest`: `actions/checkout@v4`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`, `cargo test --locked`, `cargo build --release --locked`, `actions/upload-artifact@v4` (`target/release/webcam-view-pip.exe`), and on `startsWith(github.ref, 'refs/tags/v')`: `softprops/action-gh-release@v2` with `files: target/release/webcam-view-pip.exe`. Commit `Cargo.lock` so `--locked` works.
 
 - [ ] **Step 2: README** — what the app does, how to use it (setup, drag, resize, right-click menu), where the config is, how to release (`git tag v0.1.0 && git push origin v0.1.0`).
 - [ ] **Step 3: Verify** — the YAML parses (`python -c "import yaml,sys; yaml.safe_load(open('.github/workflows/release.yml'))"`), and `cargo build --locked` succeeds locally.

@@ -19,9 +19,9 @@ pub struct Config {
     pub border: Border,
 }
 
-/// `%APPDATA%\pip-view\config.json` on Windows.
+/// `%APPDATA%\webcam-view-pip\config.json` on Windows.
 pub fn default_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "pip-view").map(|d| d.config_dir().join("config.json"))
+    directories::ProjectDirs::from("", "", "webcam-view-pip").map(|d| d.config_dir().join("config.json"))
 }
 
 /// Reads the config. Returns `None` if the file is missing or not valid.

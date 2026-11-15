@@ -1,10 +1,10 @@
-# pip-view — PiP Camera for Windows
+# webcam-view-pip — PiP Camera for Windows
 
-**A free picture-in-picture (PiP) webcam viewer for Windows.** pip-view shows
+**A free picture-in-picture (PiP) webcam viewer for Windows.** webcam-view-pip shows
 your camera in a small window that stays on top of all other apps. You can
 crop the camera image, so the window shows only the area that you select.
 
-[**Download pip-view.exe**](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/pip-view.exe)
+[**Download webcam-view-pip.exe**](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases/latest/download/webcam-view-pip.exe)
 (Windows 10 and 11, 64-bit, no installation) ·
 [Website](https://muhammad-towfique-imam.github.io/webcam-view-pip/) ·
 [All releases](https://github.com/muhammad-towfique-imam/webcam-view-pip/releases)
@@ -22,7 +22,7 @@ crop the camera image, so the window shows only the area that you select.
 
 ## Use
 
-1. Start `pip-view.exe`.
+1. Start `webcam-view-pip.exe`.
 2. Select a camera and click **Next**.
 3. Drag on the camera image to select the area. Click **Confirm**.
 4. The PiP window opens.
@@ -37,7 +37,7 @@ In the PiP window:
   Blue, or Yellow. The app saves the selection.
 
 The app saves the camera, the area, and the window position in
-`%APPDATA%\pip-view\config.json`. At the next start, the app opens the PiP
+`%APPDATA%\webcam-view-pip\config.json`. At the next start, the app opens the PiP
 window directly. If the saved camera is not connected, the app opens the
 camera list. To start the setup again, delete the config file.
 
@@ -53,7 +53,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow then attaches `pip-view.exe` to a GitHub release for that tag.
+The workflow then attaches `webcam-view-pip.exe` to a GitHub release for that tag.
 
 Local build (Linux uses V4L2 for the camera, Windows uses Media Foundation):
 

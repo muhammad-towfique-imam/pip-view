@@ -124,7 +124,7 @@ impl PipApp {
             border: self.border,
         };
         if let Err(e) = config::save(path, &cfg) {
-            eprintln!("pip-view: cannot save config: {e:#}");
+            eprintln!("webcam-view-pip: cannot save config: {e:#}");
         }
     }
 

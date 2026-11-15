@@ -1,4 +1,4 @@
-# pip-view — Design
+# webcam-view-pip — Design
 
 Date: 2026-11-15
 
@@ -57,7 +57,7 @@ The user selected approach 1. The user accepted the default PiP behavior.
 - `nokhwa` with the `input-native` feature — camera access (Media Foundation
   on Windows; V4L2 on Linux, so `cargo test` also works on the Linux machine).
 - `serde`, `serde_json` — config file.
-- `directories` — config path (`%APPDATA%\pip-view\config.json`).
+- `directories` — config path (`%APPDATA%\webcam-view-pip\config.json`).
 - `anyhow` — errors.
 
 ### Window modes
@@ -122,7 +122,7 @@ and the last PiP window position and size. At start:
 - Runner: `windows-latest`.
 - Steps: checkout, install stable Rust, cache, `cargo test`,
   `cargo build --release`.
-- On a tag: upload `pip-view.exe` to a GitHub release for that tag.
+- On a tag: upload `webcam-view-pip.exe` to a GitHub release for that tag.
 - On other triggers: upload the `.exe` as a workflow artifact.
 
 `main.rs` has `#![windows_subsystem = "windows"]`, so no console window opens.

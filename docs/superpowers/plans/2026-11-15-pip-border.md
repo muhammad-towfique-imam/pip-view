@@ -84,6 +84,6 @@ The existing `save_then_load_round_trip` then also covers a saved `Red`.
 - [ ] **Step 1: State** — `PipApp` gets `border: Border`. `new` reads it from the loaded config; `save_config` writes it.
 - [ ] **Step 2: Drawing** — in `ui_pip`, after the image and before the grip mark: if `self.border.color()` is `Some(c)`, call `ui.painter().rect_stroke(full, 0.0, Stroke::new(BORDER_PX / ui.ctx().pixels_per_point(), c), StrokeKind::Inside)`. `full` is the whole window rect, so the line is at the window edge also with letterbox bars.
 - [ ] **Step 3: Menu** — in the context menu, between "Select camera" and "Exit": `ui.menu_button("Border", |ui| for b in Border::ALL { if ui.radio(self.border == b, b.label()).clicked() { self.border = b; self.save_config(); } })`. If egui 0.37 renames `menu_button` or `radio`, use the 0.37 name.
-- [ ] **Step 4: Verify** — `cargo clippy --all-targets -- -D warnings` clean; `cargo test` → 33 passed; run the app 5 s with `timeout 5 ./target/debug/pip-view` → exit 124, no panic.
+- [ ] **Step 4: Verify** — `cargo clippy --all-targets -- -D warnings` clean; `cargo test` → 33 passed; run the app 5 s with `timeout 5 ./target/debug/webcam-view-pip` → exit 124, no panic.
 - [ ] **Step 5: README** — add "Border" to the menu list in the Use section.
 - [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: add border submenu to the PiP window"`
