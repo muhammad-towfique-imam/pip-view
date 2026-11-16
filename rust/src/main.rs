@@ -8,6 +8,7 @@ mod border;
 mod capture_logic;
 mod config;
 mod geometry;
+mod layout;
 mod log;
 mod modes;
 mod watchdog;
