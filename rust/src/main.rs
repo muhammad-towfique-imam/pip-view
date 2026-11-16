@@ -11,6 +11,7 @@ mod geometry;
 mod log;
 mod modes;
 mod watchdog;
+mod worker;
 #[cfg(windows)]
 mod win;
 
