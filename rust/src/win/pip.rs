@@ -383,7 +383,30 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                 return LRESULT(0);
             }
         }
+        // A right-click on the caption area (most of the window) is the
+        // system-menu gesture for DefWindowProc, which then sends no
+        // WM_CONTEXTMENU. Handle the right button here: the press does
+        // nothing, the release opens the menu (also for press-and-hold).
+        WM_NCRBUTTONDOWN => return LRESULT(0),
+        WM_NCRBUTTONUP => {
+            let (x, y) = xy(lp);
+            log!("PiP menu: right button on the caption at {x},{y}");
+            apply(vec![Op::Pip(PipOp::Menu(x, y))]);
+            return LRESULT(0);
+        }
+        // The grip corner is client area.
+        WM_RBUTTONUP => {
+            let (cx, cy) = xy(lp);
+            let mut p = POINT { x: cx, y: cy };
+            unsafe {
+                let _ = ClientToScreen(hwnd, &mut p);
+            }
+            log!("PiP menu: right button in the grip at {},{}", p.x, p.y);
+            apply(vec![Op::Pip(PipOp::Menu(p.x, p.y))]);
+            return LRESULT(0);
+        }
         WM_CONTEXTMENU => {
+            log!("PiP menu: WM_CONTEXTMENU");
             let (mut x, mut y) = xy(lp);
             if x == -1 && y == -1 {
                 // From the keyboard: open the menu in the middle of the window.
