@@ -168,7 +168,7 @@ pub fn apply(ops: Vec<Op>) {
                         let w = wide(item);
                         SendMessageW(h, LB_ADDSTRING, None, Some(LPARAM(w.as_ptr() as isize)));
                     }
-                    let sel = sel.map_or(usize::MAX, |s| s);
+                    let sel = sel.unwrap_or(usize::MAX);
                     SendMessageW(h, LB_SETCURSEL, Some(WPARAM(sel)), None);
                 }
                 Op::Enable(h, on) => {
