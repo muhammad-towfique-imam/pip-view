@@ -27,7 +27,10 @@ that you select.
 ## Use on Windows
 
 1. Start `webcam-view-pip.exe`.
-2. Select a camera and click **Next**.
+2. Select a camera, then select a **Stream**. The app selects the
+   **Preview** stream if the camera has one: it is the stream that the Windows
+   Camera app shows. If a camera shows extra content (for example the small
+   window of an AI camera) only in 1 stream, select that stream. Click **Next**.
 3. Drag on the camera image to select the area. Click **Confirm**.
 4. The PiP window opens.
 
@@ -35,26 +38,23 @@ In the PiP window:
 
 - Drag the window to move it.
 - Drag the bottom-right corner to resize it.
-- Right-click to open the menu: **Select area**, **Select camera**,
-  **Border**, **Exit**.
+- Right-click (or touch and hold on a touch screen) to open the menu:
+  **Select area**, **Select camera**, **Border**, **Exit**.
 - **Border** puts a colored line at the window edge: None, White, Green, Red,
   Blue, or Yellow. The app saves the selection.
 
-The app saves the camera, the area, and the window position in
+The app saves the camera, the stream, the area, and the window position in
 `%APPDATA%\webcam-view-pip\config.json`. At the next start, the app opens the PiP
 window directly. If the saved camera is not connected, the app opens the
 camera list. To start the setup again, delete the config file.
 
-### If the Windows app freezes
+### If the Windows app does not work
 
-The app writes a log to `%APPDATA%\webcam-view-pip\log.txt`. The log shows
-the camera formats, the GPU, the time of each step, and the step where the
-window stopped (lines with `UI STALL`). The app starts a new log at each start,
-so copy the file before you start the app again. Send the file with a problem
-report.
-
-To use OpenGL in place of the default renderer, add `"renderer": "glow",` after
-the first `{` in `%APPDATA%\webcam-view-pip\config.json`.
+The app writes a log to `%APPDATA%\webcam-view-pip\log.txt`. The log lists
+each camera, each stream with all its modes, each try to open the camera (with
+the Windows error code), the frame rate, and the step where the window stopped
+(lines with `UI STALL`). The app starts a new log at each start, so copy the
+file before you start the app again. Send the file with a problem report.
 
 ## Use on Android
 
@@ -79,7 +79,7 @@ PiP window directly with the saved settings.
 
 ## Repository layout
 
-- `rust/` — the Windows app (Rust, egui).
+- `rust/` — the Windows app (Rust, Win32, Media Foundation).
 - `android/` — the Android app (Kotlin, CameraX).
 - `site/` — the website.
 
@@ -124,13 +124,16 @@ To make the encrypted file again after a key change, write
 `keystore.properties` and the passphrase in `android/.env`, then run
 `./gradlew encryptReleaseKey` in `android/` and commit the new file.
 
-Local build of the Windows app (Linux uses V4L2 for the camera, Windows uses
-Media Foundation):
+Local build of the Windows app. It uses Win32 and Media Foundation, so it
+builds only for Windows. On Linux, the unit tests run, and a type check for
+Windows is possible:
 
 ```sh
 cd rust
 cargo test
-cargo build --release
+cargo build --release                               # on Windows
+rustup target add x86_64-pc-windows-gnu             # on Linux, 1 time
+cargo check --target x86_64-pc-windows-gnu          # on Linux
 ```
 
 Local build of the Android app (JDK 17 or later and the Android SDK):

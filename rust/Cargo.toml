@@ -1,6 +1,6 @@
 [package]
 name = "webcam-view-pip"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 description = "PiP camera for Windows: a picture-in-picture webcam window that stays on top and shows a selected area of the camera"
 license = "MIT"
