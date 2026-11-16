@@ -13,6 +13,8 @@ pub enum Stage {
     StartCapture = 5,
     StopCapture = 6,
     SaveConfig = 7,
+    /// The window procedure handles a message (`MESSAGE`).
+    Message = 8,
 }
 
 impl Stage {
@@ -25,6 +27,7 @@ impl Stage {
             5 => Stage::StartCapture,
             6 => Stage::StopCapture,
             7 => Stage::SaveConfig,
+            8 => Stage::Message,
             _ => Stage::Outside,
         }
     }
@@ -69,7 +72,7 @@ impl StallDetector {
     }
 }
 
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::time::Duration;
 
 use crate::log::{log, now_ms};
@@ -78,6 +81,37 @@ static STAGE: AtomicU8 = AtomicU8::new(0);
 static SINCE: AtomicU64 = AtomicU64::new(0);
 /// Increases by 1 for each camera frame. The capture thread sets it.
 pub static CAPTURE_FRAMES: AtomicU64 = AtomicU64::new(0);
+
+/// The window message that the window procedure handles now.
+pub static MESSAGE: AtomicU32 = AtomicU32::new(0);
+/// The depth of nested window procedure calls.
+static DEPTH: AtomicU32 = AtomicU32::new(0);
+/// True in a modal move, size, or menu loop of Windows.
+static MODAL: AtomicBool = AtomicBool::new(false);
+
+/// The window procedure starts to handle `msg`.
+pub fn enter_message(msg: u32) {
+    DEPTH.fetch_add(1, Ordering::Relaxed);
+    MESSAGE.store(msg, Ordering::Relaxed);
+    enter(Stage::Message);
+}
+
+/// The window procedure ends a message. In a modal loop, the outer message
+/// waits for the user (a drag or an open menu); that is not a stall.
+pub fn leave_message() {
+    let depth = DEPTH.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
+    if depth == 0 || MODAL.load(Ordering::Relaxed) {
+        enter(Stage::Outside);
+    } else {
+        enter(Stage::Message);
+    }
+}
+
+/// Windows starts (true) or ends (false) a modal move, size, or menu loop.
+pub fn set_modal(on: bool) {
+    MODAL.store(on, Ordering::Relaxed);
+    enter(if on { Stage::Outside } else { Stage::Message });
+}
 
 /// The UI thread enters `stage` now.
 pub fn enter(stage: Stage) {
@@ -102,7 +136,8 @@ pub fn start() {
             }
             match detector.check(now_ms(), stage, since, frames > frames_at_since) {
                 Some(Event::Stall { stage, ms }) => {
-                    log!("UI STALL: the UI thread is in {stage:?} for {ms} ms (camera frames: {frames})")
+                    let msg = MESSAGE.load(Ordering::Relaxed);
+                    log!("UI STALL: the UI thread is in {stage:?} (message 0x{msg:04X}) for {ms} ms (camera frames: {frames})")
                 }
                 Some(Event::Recovered { stage, ms }) => log!("UI back after {ms} ms in {stage:?}"),
                 None => {}
@@ -146,6 +181,11 @@ mod tests {
         d.check(2500, Stage::Ui, 0, false);
         assert_eq!(d.check(7000, Stage::Outside, 6000, false), Some(Event::Recovered { stage: Stage::Ui, ms: 6000 }));
         assert_eq!(d.check(7100, Stage::Outside, 6000, false), None);
+    }
+
+    #[test]
+    fn message_stage_round_trip() {
+        assert_eq!(Stage::from_u8(Stage::Message as u8), Stage::Message);
     }
 
     #[test]

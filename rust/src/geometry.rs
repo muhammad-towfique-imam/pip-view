@@ -82,9 +82,88 @@ pub fn position_visible(pos: (f32, f32), size: (f32, f32), desktop: (f32, f32, f
         && overlap(pos.1, size.1, desktop.1, desktop.3) >= MIN_VISIBLE
 }
 
+/// Where a pointer press on the PiP window acts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit {
+    Move,
+    Resize,
+}
+
+/// The bottom-right `grip` square of a `w`×`h` window resizes, the rest moves.
+pub fn hit_test(x: i32, y: i32, w: i32, h: i32, grip: i32) -> Hit {
+    if x >= w - grip && y >= h - grip {
+        Hit::Resize
+    } else {
+        Hit::Move
+    }
+}
+
+/// The window size for the width `w` with the aspect kept, at least
+/// `min_w`×`min_h`.
+pub fn keep_aspect(w: i32, aspect: f32, min_w: i32, min_h: i32) -> (i32, i32) {
+    let aspect = if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.0 };
+    let min_w = min_w.max((min_h as f32 * aspect).ceil() as i32);
+    let w = w.max(min_w);
+    (w, ((w as f32 / aspect).round() as i32).max(min_h))
+}
+
+/// The area in frame pixels (x, y, width, height), at least 1×1 and inside
+/// the frame.
+pub fn crop_src(area: NormRect, w: u32, h: u32) -> (i32, i32, i32, i32) {
+    let axis = |start: f32, len: f32, size: u32| {
+        let size = size.max(1) as i32;
+        let s = ((start * size as f32).round() as i32).clamp(0, size - 1);
+        let l = ((len * size as f32).round() as i32).clamp(1, size - s);
+        (s, l)
+    };
+    let (x, cw) = axis(area.x, area.w, w);
+    let (y, ch) = axis(area.y, area.h, h);
+    (x, y, cw, ch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hit_corner_is_resize() {
+        assert_eq!(hit_test(310, 170, 320, 180, 16), Hit::Resize);
+    }
+
+    #[test]
+    fn hit_elsewhere_is_move() {
+        assert_eq!(hit_test(100, 170, 320, 180, 16), Hit::Move);
+        assert_eq!(hit_test(310, 10, 320, 180, 16), Hit::Move);
+    }
+
+    #[test]
+    fn keep_aspect_basic() {
+        assert_eq!(keep_aspect(300, 16.0 / 9.0, 64, 48), (300, 169));
+    }
+
+    #[test]
+    fn keep_aspect_min() {
+        let (w, h) = keep_aspect(10, 16.0 / 9.0, 64, 48);
+        assert!(w >= 64 && h >= 48, "{w}x{h}");
+    }
+
+    #[test]
+    fn crop_src_full() {
+        assert_eq!(crop_src(NormRect::FULL, 640, 480), (0, 0, 640, 480));
+    }
+
+    #[test]
+    fn crop_src_area() {
+        let a = NormRect { x: 0.25, y: 0.5, w: 0.5, h: 0.25 };
+        assert_eq!(crop_src(a, 640, 480), (160, 240, 320, 120));
+    }
+
+    #[test]
+    fn crop_src_tiny_area_is_1px() {
+        let a = NormRect { x: 1.0, y: 1.0, w: 0.0, h: 0.0 };
+        let (x, y, w, h) = crop_src(a, 640, 480);
+        assert!(w >= 1 && h >= 1 && x + w <= 640 && y + h <= 480, "{x} {y} {w} {h}");
+    }
 
     #[test]
     fn forward_drag() {

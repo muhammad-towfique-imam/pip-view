@@ -1,6 +1,5 @@
 //! Border option of the PiP window.
 
-use eframe::egui::Color32;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Width of the border line in physical pixels.
@@ -34,15 +33,15 @@ impl Border {
         }
     }
 
-    /// The line color, or `None` for no border.
-    pub fn color(self) -> Option<Color32> {
+    /// The line color as (red, green, blue), or `None` for no border.
+    pub fn rgb(self) -> Option<(u8, u8, u8)> {
         match self {
             Border::None => None,
-            Border::White => Some(Color32::WHITE),
-            Border::Green => Some(Color32::GREEN),
-            Border::Red => Some(Color32::RED),
-            Border::Blue => Some(Color32::BLUE),
-            Border::Yellow => Some(Color32::YELLOW),
+            Border::White => Some((255, 255, 255)),
+            Border::Green => Some((0, 255, 0)),
+            Border::Red => Some((255, 0, 0)),
+            Border::Blue => Some((0, 0, 255)),
+            Border::Yellow => Some((255, 255, 0)),
         }
     }
 }
@@ -68,17 +67,17 @@ mod tests {
     }
 
     #[test]
-    fn none_has_no_color() {
-        assert_eq!(Border::None.color(), None);
+    fn none_has_no_rgb() {
+        assert_eq!(Border::None.rgb(), None);
     }
 
     #[test]
-    fn colors() {
-        assert_eq!(Border::White.color(), Some(Color32::WHITE));
-        assert_eq!(Border::Green.color(), Some(Color32::GREEN));
-        assert_eq!(Border::Red.color(), Some(Color32::RED));
-        assert_eq!(Border::Blue.color(), Some(Color32::BLUE));
-        assert_eq!(Border::Yellow.color(), Some(Color32::YELLOW));
+    fn rgb_values() {
+        assert_eq!(Border::White.rgb(), Some((255, 255, 255)));
+        assert_eq!(Border::Green.rgb(), Some((0, 255, 0)));
+        assert_eq!(Border::Red.rgb(), Some((255, 0, 0)));
+        assert_eq!(Border::Blue.rgb(), Some((0, 0, 255)));
+        assert_eq!(Border::Yellow.rgb(), Some((255, 255, 0)));
     }
 
     #[test]

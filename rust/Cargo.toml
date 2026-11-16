@@ -8,15 +8,27 @@ repository = "https://github.com/muhammad-towfique-imam/webcam-view-pip"
 keywords = ["pip", "picture-in-picture", "webcam", "camera", "windows"]
 
 [dependencies]
-eframe = { version = "0.37", features = ["glow"] }
-nokhwa = { version = "0.10", features = ["input-native"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 directories = "6"
 anyhow = "1"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_Media_MediaFoundation",
+    "Win32_Media_KernelStreaming",
+] }
+
+[build-dependencies]
+embed-manifest = "1.5"
 
 [dev-dependencies]
 tempfile = "3"

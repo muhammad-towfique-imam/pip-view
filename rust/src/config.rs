@@ -17,9 +17,12 @@ pub struct Config {
     /// Missing in a v0.1.0 config file; then `Border::None`.
     #[serde(default)]
     pub border: Border,
-    /// "glow" selects the OpenGL renderer. Missing or other: wgpu.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub renderer: Option<String>,
+    /// The Media Foundation symbolic link of the camera. Missing before v0.4.
+    #[serde(default)]
+    pub camera_id: Option<String>,
+    /// The index of the camera stream. Missing: the default stream.
+    #[serde(default)]
+    pub stream: Option<u32>,
 }
 
 /// `%APPDATA%\webcam-view-pip\config.json` on Windows.
@@ -42,9 +45,13 @@ pub fn save(path: &Path, cfg: &Config) -> anyhow::Result<()> {
     std::fs::write(path, text).with_context(|| format!("write {}", path.display()))
 }
 
-/// Returns the index of the first camera with the name `saved`.
-pub fn find_camera(names: &[String], saved: &str) -> Option<usize> {
-    names.iter().position(|n| n == saved)
+/// Finds the saved camera in `devices` (name, id): by id first, because 2
+/// cameras can have the same name, then by name, because the id changes
+/// when the camera moves to a different USB port.
+pub fn find_camera(devices: &[(String, String)], saved_id: Option<&str>, saved_name: &str) -> Option<usize> {
+    saved_id
+        .and_then(|id| devices.iter().position(|(_, d)| d == id))
+        .or_else(|| devices.iter().position(|(n, _)| n == saved_name))
 }
 
 #[cfg(test)]
@@ -60,7 +67,8 @@ mod tests {
             window_pos: Some((10.0, 20.0)),
             window_size: Some((320.0, 180.0)),
             border: Border::Red,
-            renderer: Some("glow".into()),
+            camera_id: Some(r"\\?\usb#vid_046d".into()),
+            stream: Some(1),
         }
     }
 
@@ -112,23 +120,31 @@ mod tests {
     }
 
     #[test]
-    fn config_without_renderer_uses_wgpu() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.json");
-        std::fs::write(&path, V010_JSON).unwrap();
-        assert_eq!(load(&path).unwrap().renderer, None);
-    }
-
-    #[test]
-    fn renderer_is_kept_when_saved() {
+    fn old_config_with_renderer_loads() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
         let json = V010_JSON.replacen('{', r#"{ "renderer": "glow","#, 1);
         std::fs::write(&path, json).unwrap();
+        assert!(load(&path).is_some());
+    }
+
+    #[test]
+    fn config_without_id_and_stream_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, V010_JSON).unwrap();
         let cfg = load(&path).unwrap();
-        assert_eq!(cfg.renderer.as_deref(), Some("glow"));
-        save(&path, &cfg).unwrap();
-        assert_eq!(load(&path).unwrap().renderer.as_deref(), Some("glow"));
+        assert_eq!((cfg.camera_id, cfg.stream), (None, None));
+    }
+
+    #[test]
+    fn camera_id_and_stream_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        save(&path, &sample()).unwrap();
+        let cfg = load(&path).unwrap();
+        assert_eq!(cfg.camera_id, sample().camera_id);
+        assert_eq!(cfg.stream, Some(1));
     }
 
     #[test]
@@ -153,10 +169,23 @@ mod tests {
         }
     }
 
+    fn devices() -> Vec<(String, String)> {
+        vec![("Cam".into(), "a".into()), ("Cam".into(), "b".into())]
+    }
+
     #[test]
-    fn find_camera_by_name_not_index() {
-        let names = vec!["OBS Virtual".to_string(), "Logitech C920".to_string()];
-        assert_eq!(find_camera(&names, "Logitech C920"), Some(1));
-        assert_eq!(find_camera(&names, "Gone Cam"), None);
+    fn find_by_id_first() {
+        assert_eq!(find_camera(&devices(), Some("b"), "Cam"), Some(1));
+    }
+
+    #[test]
+    fn find_by_name_if_id_changed() {
+        assert_eq!(find_camera(&devices(), Some("zzz"), "Cam"), Some(0));
+        assert_eq!(find_camera(&devices(), None, "Cam"), Some(0));
+    }
+
+    #[test]
+    fn find_none() {
+        assert_eq!(find_camera(&devices(), Some("zzz"), "Gone"), None);
     }
 }
