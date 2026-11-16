@@ -58,8 +58,13 @@ impl Fallback {
                 self.running = true;
                 CapAction::Running
             }
+            // `Lost` comes only after frames: the mode works, so keep it.
+            CapEvent::Lost => {
+                self.running = true;
+                CapAction::RetryLater
+            }
             _ if self.running => CapAction::RetryLater,
-            CapEvent::OpenFailed | CapEvent::NoFirstFrame | CapEvent::Lost | CapEvent::RetryFailed => {
+            CapEvent::OpenFailed | CapEvent::NoFirstFrame | CapEvent::RetryFailed => {
                 let next = self.current + 1;
                 if next < self.modes.min(MAX_TRIES) {
                     self.current = next;
@@ -111,6 +116,16 @@ mod tests {
         f.on(CapEvent::OpenFailed);
         assert_eq!(f.on(CapEvent::FirstFrame), CapAction::Running);
         assert_eq!(f.mode(), 1);
+    }
+
+    #[test]
+    fn lost_without_first_frame_event_still_retries() {
+        // The capture thread reports Lost only after frames came.
+        let mut f = Fallback::new(1);
+        f.start();
+        assert_eq!(f.on(CapEvent::Lost), CapAction::RetryLater);
+        assert_eq!(f.on(CapEvent::RetryFailed), CapAction::RetryLater);
+        assert_eq!(f.on(CapEvent::OpenFailed), CapAction::RetryLater);
     }
 
     #[test]

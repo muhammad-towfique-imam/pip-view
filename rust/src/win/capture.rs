@@ -147,7 +147,8 @@ impl Drop for Capture {
 /// The result of 1 try of a mode.
 enum Outcome {
     Stopped,
-    Event(CapEvent),
+    /// The try ended. `bool`: frames came in this try.
+    Event(CapEvent, bool),
 }
 
 fn run(device: &Device, stream: u32, sh: &Shared) {
@@ -167,6 +168,8 @@ fn run(device: &Device, stream: u32, sh: &Shared) {
     let ranked = rank_modes(&modes);
     let mut fallback = Fallback::new(ranked.len());
     let mut action = fallback.start();
+    // True after the camera was lost: a failed open is then a failed retry.
+    let mut lost = false;
     while !sh.stopped() {
         let mode = match action {
             CapAction::TryMode(i) => modes[ranked[i]],
@@ -190,7 +193,18 @@ fn run(device: &Device, stream: u32, sh: &Shared) {
         }
         match try_mode(device, stream, &mode, sh) {
             Outcome::Stopped => break,
-            Outcome::Event(event) => {
+            Outcome::Event(event, had_frames) => {
+                if had_frames {
+                    fallback.on(CapEvent::FirstFrame);
+                }
+                let event = match event {
+                    CapEvent::OpenFailed | CapEvent::NoFirstFrame if lost => CapEvent::RetryFailed,
+                    CapEvent::Lost => {
+                        lost = true;
+                        event
+                    }
+                    other => other,
+                };
                 log!("capture: mode {} ended with {event:?}", mode.label());
                 action = fallback.on(event);
                 if action == CapAction::RetryLater {
@@ -215,7 +229,7 @@ fn try_mode(device: &Device, stream: u32, mode: &VideoMode, sh: &Shared) -> Outc
         Ok(s) => s,
         Err(e) => {
             log!("capture: open source failed: {e:#}");
-            return Outcome::Event(CapEvent::OpenFailed);
+            return Outcome::Event(CapEvent::OpenFailed, false);
         }
     };
     *sh.source.lock().unwrap_or_else(|e| e.into_inner()) = Some(source.clone());
@@ -228,7 +242,7 @@ fn try_mode(device: &Device, stream: u32, mode: &VideoMode, sh: &Shared) -> Outc
         Err(e) => {
             log!("capture: open reader failed: {e:#}");
             sh.shutdown_source();
-            return Outcome::Event(CapEvent::OpenFailed);
+            return Outcome::Event(CapEvent::OpenFailed, false);
         }
     };
     log!("capture: mode {} open in {} ms", mode.label(), t.elapsed().as_millis());
@@ -326,7 +340,7 @@ fn read_loop(reader: &mut Reader, mode: &VideoMode, sh: &Shared, first_seen: &At
                     return Outcome::Stopped;
                 }
                 let event = if had_first { CapEvent::Lost } else { CapEvent::NoFirstFrame };
-                return Outcome::Event(event);
+                return Outcome::Event(event, had_first);
             }
         }
     }

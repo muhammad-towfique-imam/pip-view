@@ -121,9 +121,74 @@ pub fn crop_src(area: NormRect, w: u32, h: u32) -> (i32, i32, i32, i32) {
     (x, y, cw, ch)
 }
 
+/// The first PiP window rectangle (x, y, width, height) in physical pixels.
+/// The saved size is made smaller to fit the work area. Without a saved size,
+/// the size comes from the area aspect (`PIP_WIDTH` points wide); without an
+/// aspect, the caller must wait for the first frame (`None`). A saved position
+/// that is not visible on the desktop is replaced by the work area center.
+pub fn first_pip_rect(
+    saved_pos: Option<(f32, f32)>,
+    saved_size: Option<(f32, f32)>,
+    frame_aspect: Option<f32>,
+    desktop: (f32, f32, f32, f32),
+    work_area: (f32, f32, f32, f32),
+    dpi_scale: f32,
+) -> Option<(i32, i32, i32, i32)> {
+    let (wx, wy, ww, wh) = work_area;
+    let (w, h) = match saved_size {
+        Some((w, h)) if w > 0.0 && h > 0.0 && w.is_finite() && h.is_finite() => {
+            let s = (ww / w).min(wh / h).min(1.0);
+            (w * s, h * s)
+        }
+        _ => {
+            let aspect = frame_aspect?;
+            let max = (ww * 0.8 / dpi_scale, wh * 0.8 / dpi_scale);
+            let (w, h) = pip_size(aspect, max);
+            (w * dpi_scale, h * dpi_scale)
+        }
+    };
+    let (x, y) = match saved_pos {
+        Some(pos) if position_visible(pos, (w, h), desktop) => pos,
+        _ => (wx + (ww - w) / 2.0, wy + (wh - h) / 2.0),
+    };
+    Some((x.round() as i32, y.round() as i32, w.round() as i32, h.round() as i32))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DESKTOP: (f32, f32, f32, f32) = (0.0, 0.0, 1920.0, 1080.0);
+    const WORK: (f32, f32, f32, f32) = (0.0, 0.0, 1920.0, 1040.0);
+
+    #[test]
+    fn first_rect_uses_saved_when_visible() {
+        let r = first_pip_rect(Some((100.0, 100.0)), Some((320.0, 180.0)), None, DESKTOP, WORK, 1.0);
+        assert_eq!(r, Some((100, 100, 320, 180)));
+    }
+
+    #[test]
+    fn first_rect_ignores_offscreen_pos() {
+        let r = first_pip_rect(Some((5000.0, 5000.0)), Some((320.0, 180.0)), None, DESKTOP, WORK, 1.0);
+        assert_eq!(r, Some((800, 430, 320, 180)));
+    }
+
+    #[test]
+    fn first_rect_clamps_large_size() {
+        let r = first_pip_rect(Some((0.0, 0.0)), Some((4000.0, 2000.0)), None, DESKTOP, WORK, 1.0);
+        assert_eq!(r, Some((0, 0, 1920, 960)));
+    }
+
+    #[test]
+    fn first_rect_waits_for_frame_without_size() {
+        assert_eq!(first_pip_rect(None, None, None, DESKTOP, WORK, 1.0), None);
+    }
+
+    #[test]
+    fn first_rect_from_aspect_uses_dpi_scale() {
+        let r = first_pip_rect(None, None, Some(16.0 / 9.0), DESKTOP, WORK, 1.5);
+        assert_eq!(r, Some((720, 385, 480, 270)));
+    }
 
     #[test]
     fn hit_corner_is_resize() {

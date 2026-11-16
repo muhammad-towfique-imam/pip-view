@@ -45,11 +45,12 @@ pub fn run() {
     // SAFETY: the module handle of this exe.
     let hinst = unsafe { GetModuleHandleW(None) }.map(Into::into).unwrap_or_default();
     setup::register(hinst);
-    if setup::create(hinst).is_none() {
-        log!("cannot create the setup window");
+    pip::register(hinst);
+    if setup::create(hinst).is_none() || pip::create(hinst).is_none() {
+        log!("cannot create the windows");
         return;
     }
-    let ops = app::with_app(|a| a.open_camera_page(None)).unwrap_or_default();
+    let ops = app::with_app(|a| a.begin()).unwrap_or_default();
     app::apply(ops);
 
     let mut msg = MSG::default();
@@ -63,5 +64,7 @@ pub fn run() {
             }
         }
     }
+    // Stop the capture before the process ends, so that the camera is released.
+    app::with_app(|a| a.capture = None);
     log!("exit");
 }

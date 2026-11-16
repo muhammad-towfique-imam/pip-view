@@ -121,6 +121,10 @@ pub struct App {
     /// PiP position and size in physical pixels.
     pub window_pos: Option<(f32, f32)>,
     pub window_size: Option<(f32, f32)>,
+    /// The PiP window waits for the first frame to get its size.
+    pub pip_pending: bool,
+    /// The app start opens the saved camera and stream directly in the PiP.
+    auto_start: bool,
 }
 
 thread_local! {
@@ -244,7 +248,34 @@ impl App {
             border,
             window_pos,
             window_size,
+            pip_pending: false,
+            auto_start: false,
         }
+    }
+
+    /// At app start with a saved config: show the PiP at once with "Starting
+    /// the camera…", and find the saved camera and stream in the background.
+    /// Without a saved size, use the camera page (the PiP size needs a frame).
+    pub fn begin(&mut self) -> Vec<Op> {
+        let can_auto = self.saved.as_ref().is_some_and(|c| c.window_size.is_some());
+        if !can_auto {
+            return self.open_camera_page(None);
+        }
+        log!("start: open the saved camera in the PiP");
+        self.auto_start = true;
+        self.status_text = "Starting the camera…".into();
+        let mut ops = self.start_device_job();
+        ops.extend(super::pip::show(self));
+        ops
+    }
+
+    /// The automatic start failed: show the camera page with the reason.
+    fn auto_failed(&mut self, message: &str) -> Vec<Op> {
+        log!("start: {message}");
+        self.auto_start = false;
+        let mut ops = vec![Op::ShowPage(Page::Camera)];
+        ops.push(self.status(message));
+        ops
     }
 
     pub fn save_config(&self) {
@@ -343,21 +374,31 @@ impl App {
         match result {
             Err(e) => {
                 log!("camera list failed: {e:#}");
+                if self.auto_start {
+                    return self.auto_failed("Cannot read the cameras. Restart the app.");
+                }
                 vec![self.status("Cannot read the cameras. Restart the app.")]
             }
             Ok(devices) if devices.is_empty() => {
                 self.devices.clear();
+                if self.auto_start {
+                    return self.auto_failed("No camera found. Connect a camera and restart the app.");
+                }
                 vec![self.status("No camera found. Connect a camera and restart the app.")]
             }
             Ok(devices) => {
                 let pairs: Vec<(String, String)> = devices.iter().map(|d| (d.name.clone(), d.id.clone())).collect();
                 let saved = self.saved.as_ref();
-                let index = saved
-                    .and_then(|c| config::find_camera(&pairs, c.camera_id.as_deref(), &c.camera_name))
-                    .unwrap_or(0);
+                let found = saved.and_then(|c| config::find_camera(&pairs, c.camera_id.as_deref(), &c.camera_name));
+                let mut early = Vec::new();
+                if self.auto_start && found.is_none() {
+                    early = self.auto_failed("The saved camera is not connected. Select a camera.");
+                }
+                let index = found.unwrap_or(0);
                 let names = devices.iter().map(|d| d.name.clone()).collect();
                 self.devices = devices;
-                let mut ops = vec![Op::List(self.controls.cam_list, names, Some(index))];
+                let mut ops = early;
+                ops.push(Op::List(self.controls.cam_list, names, Some(index)));
                 ops.extend(self.select_camera(index));
                 ops
             }
@@ -380,12 +421,19 @@ impl App {
             Ok(s) => s,
             Err(e) => {
                 log!("stream list failed: {e:#}");
-                return vec![self.status("The camera does not open. It can be in use by a different app.")];
+                let message = "The camera does not open. It can be in use by a different app.";
+                if self.auto_start {
+                    return self.auto_failed(message);
+                }
+                return vec![self.status(message)];
             }
         };
         let color: Vec<&StreamInfo> = streams.iter().filter(|s| s.color).collect();
         if color.is_empty() {
             self.streams = streams;
+            if self.auto_start {
+                return self.auto_failed("This camera has no color stream.");
+            }
             return vec![self.status("This camera has no color stream."), self.next_enabled()];
         }
         let saved_stream = self
@@ -400,7 +448,16 @@ impl App {
         self.stream = chosen;
         self.streams = streams;
         log!("default stream: {chosen:?}");
-        vec![Op::List(self.controls.stream_list, labels, sel), self.status(""), self.next_enabled()]
+        let ops = vec![Op::List(self.controls.stream_list, labels, sel), self.status(""), self.next_enabled()];
+        if self.auto_start {
+            self.auto_start = false;
+            if let (Some(device), Some(stream)) = (self.device.clone(), chosen) {
+                log!("start: capture \"{}\" stream {stream}", device.name);
+                self.status_text = "Starting the camera…".into();
+                self.start_capture(device, stream);
+            }
+        }
+        ops
     }
 
     pub fn select_stream(&mut self, list_index: usize) -> Vec<Op> {
@@ -496,6 +553,7 @@ impl App {
         }
         match self.page {
             Page::Area => vec![Op::Invalidate(self.setup)],
+            Page::Pip if self.pip_pending => super::pip::show(self),
             Page::Pip => vec![Op::Invalidate(self.pip)],
             Page::Camera => Vec::new(),
         }
