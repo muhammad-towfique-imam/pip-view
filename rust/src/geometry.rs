@@ -154,6 +154,24 @@ pub fn first_pip_rect(
     Some((x.round() as i32, y.round() as i32, w.round() as i32, h.round() as i32))
 }
 
+/// Copies the `src` area (x, y, width, height) of a top-down 4-byte-per-pixel
+/// frame `width` pixels wide into a new tight buffer. Empty if the frame
+/// buffer is too short. (GDI reads the source y of a top-down DIB in a way that
+/// differs between versions; a full-image draw of a copy avoids the question.)
+pub fn crop_rows(frame: &[u8], width: u32, src: (i32, i32, i32, i32)) -> Vec<u8> {
+    let (x, y, w, h) = (src.0.max(0) as usize, src.1.max(0) as usize, src.2.max(0) as usize, src.3.max(0) as usize);
+    let stride = width as usize * 4;
+    if x + w > width as usize || (y + h) * stride > frame.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(w * h * 4);
+    for row in y..y + h {
+        let start = row * stride + x * 4;
+        out.extend_from_slice(&frame[start..start + w * 4]);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +206,25 @@ mod tests {
     fn first_rect_from_aspect_uses_dpi_scale() {
         let r = first_pip_rect(None, None, Some(16.0 / 9.0), DESKTOP, WORK, 1.5);
         assert_eq!(r, Some((720, 385, 480, 270)));
+    }
+
+    #[test]
+    fn crop_rows_takes_the_area() {
+        // A 3x2 frame, 4 bytes per pixel; each pixel holds its index.
+        let frame: Vec<u8> = (0..6u8).flat_map(|i| [i; 4]).collect();
+        let out = crop_rows(&frame, 3, (1, 1, 2, 1));
+        assert_eq!(out, vec![4, 4, 4, 4, 5, 5, 5, 5]);
+    }
+
+    #[test]
+    fn crop_rows_full_frame_is_a_copy() {
+        let frame: Vec<u8> = (0..6u8).flat_map(|i| [i; 4]).collect();
+        assert_eq!(crop_rows(&frame, 3, (0, 0, 3, 2)), frame);
+    }
+
+    #[test]
+    fn crop_rows_short_buffer_is_empty() {
+        assert!(crop_rows(&[0u8; 8], 3, (0, 0, 3, 2)).is_empty());
     }
 
     #[test]

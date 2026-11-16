@@ -101,11 +101,14 @@ pub fn list_devices() -> Result<Vec<Device>> {
         let mut devices = Vec::new();
         if !array.is_null() {
             for item in std::slice::from_raw_parts_mut(array, count as usize) {
+                // Take every item (this releases it), also after a failed one.
                 if let Some(activate) = item.take() {
-                    let name = allocated_string(&activate, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME)?;
-                    let id =
-                        allocated_string(&activate, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK)?;
-                    devices.push(Device { name, id });
+                    let name = allocated_string(&activate, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME);
+                    let id = allocated_string(&activate, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK);
+                    match (name, id) {
+                        (Ok(name), Ok(id)) => devices.push(Device { name, id }),
+                        (name, id) => log!("device left out: name {name:?}, id {id:?}"),
+                    }
                 }
             }
             CoTaskMemFree(Some(array as *const _));
@@ -257,13 +260,24 @@ impl Reader {
             out.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32).ctx("set the RGB32 subtype")?;
             reader.SetCurrentMediaType(stream, None, &out).ctx("set the RGB32 output type")?;
 
-            let current = reader.GetCurrentMediaType(stream).ctx("GetCurrentMediaType")?;
+            let mut r = Reader { reader, stream, width: 0, height: 0, stride: 0 };
+            r.read_output_type()?;
+            log!("reader: stream {stream}, mode {}, output RGB32 {}x{}, stride {}", mode.label(), r.width, r.height, r.stride);
+            Ok(r)
+        }
+    }
+
+    /// Reads the size and the stride of the current output type.
+    fn read_output_type(&mut self) -> Result<()> {
+        // SAFETY: valid reader and GUID pointers.
+        unsafe {
+            let current = self.reader.GetCurrentMediaType(self.stream).ctx("GetCurrentMediaType")?;
             let (width, height) = split(current.GetUINT64(&MF_MT_FRAME_SIZE).ctx("read the frame size")?);
             // Without the attribute, RGB in Media Foundation is bottom-up.
             let stride = current.GetUINT32(&MF_MT_DEFAULT_STRIDE).map(|s| s as i32).unwrap_or(-(width as i32 * 4));
-            log!("reader: stream {stream}, mode {}, output RGB32 {width}x{height}, stride {stride}", mode.label());
-            Ok(Reader { reader, stream, width, height, stride })
+            (self.width, self.height, self.stride) = (width, height, stride);
         }
+        Ok(())
     }
 
     /// Reads the next sample. This blocks until a sample comes, the camera
@@ -282,23 +296,39 @@ impl Reader {
             log!("reader: stream flags 0x{flags:X}");
             return Ok(ReadResult::Lost);
         }
+        if flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED.0 as u32 != 0 {
+            self.read_output_type()?;
+            log!("reader: output type changed to {}x{}, stride {}", self.width, self.height, self.stride);
+        }
         let Some(sample) = sample else { return Ok(ReadResult::Tick) };
         // SAFETY: valid sample; the buffer is unlocked before it is released.
         let buffer = unsafe { sample.ConvertToContiguousBuffer() }.ctx("ConvertToContiguousBuffer")?;
         let row = self.width as usize * 4;
         let mut bgra = vec![0u8; row * self.height as usize];
-        if let Ok(b2) = buffer.cast::<IMF2DBuffer>() {
+        if let Ok(b2) = buffer.cast::<IMF2DBuffer2>() {
             let mut scan0 = std::ptr::null_mut();
             let mut pitch = 0i32;
-            // SAFETY: Lock2D gives row 0 and the pitch (negative for bottom-up);
-            // each row has at least `row` bytes.
+            let mut start = std::ptr::null_mut();
+            let mut len = 0u32;
+            // SAFETY: Lock2DSize gives row 0, the pitch (negative for
+            // bottom-up), and the buffer range; each row is checked against it.
             unsafe {
-                b2.Lock2D(&mut scan0, &mut pitch).ctx("Lock2D")?;
+                b2.Lock2DSize(MF2DBuffer_LockFlags_Read, &mut scan0, &mut pitch, &mut start, &mut len)
+                    .ctx("Lock2DSize")?;
+                let (lo, hi) = (start as usize, start as usize + len as usize);
+                let mut ok = true;
                 for y in 0..self.height as usize {
                     let src = scan0.offset(y as isize * pitch as isize);
+                    if (src as usize) < lo || src as usize + row > hi {
+                        ok = false;
+                        break;
+                    }
                     std::ptr::copy_nonoverlapping(src, bgra[y * row..].as_mut_ptr(), row);
                 }
                 let _ = b2.Unlock2D();
+                if !ok {
+                    return Err(anyhow!("2D buffer of {len} bytes is too small for {}x{}", self.width, self.height));
+                }
             }
         } else {
             let mut data = std::ptr::null_mut();

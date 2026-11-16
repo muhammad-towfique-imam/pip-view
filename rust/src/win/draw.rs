@@ -5,7 +5,7 @@ use windows::Win32::Foundation::{COLORREF, RECT};
 use windows::Win32::Graphics::Gdi::*;
 
 use super::mf::Frame;
-use crate::geometry::fit_aspect;
+use crate::geometry::{crop_rows, fit_aspect};
 
 pub fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF(r as u32 | (g as u32) << 8 | (b as u32) << 16)
@@ -78,13 +78,29 @@ pub fn letterbox(container: &RECT, aspect: f32) -> RECT {
 }
 
 /// Draws the `src` part (x, y, width, height) of the frame into `dest`.
+/// A part is copied first, so that GDI always draws a full top-down image.
 pub fn paint_frame(dc: HDC, dest: &RECT, frame: &Frame, src: (i32, i32, i32, i32)) {
+    if src == (0, 0, frame.width as i32, frame.height as i32) {
+        draw_bits(dc, dest, &frame.bgra, frame.width, frame.height);
+    } else {
+        let part = crop_rows(&frame.bgra, frame.width, src);
+        if !part.is_empty() {
+            draw_bits(dc, dest, &part, src.2 as u32, src.3 as u32);
+        }
+    }
+}
+
+/// Draws a full top-down BGRA image of `w`×`h` into `dest`.
+fn draw_bits(dc: HDC, dest: &RECT, bits: &[u8], w: u32, h: u32) {
+    if bits.len() < w as usize * h as usize * 4 {
+        return;
+    }
     let info = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: frame.width as i32,
+            biWidth: w as i32,
             // Negative: top-down rows.
-            biHeight: -(frame.height as i32),
+            biHeight: -(h as i32),
             biPlanes: 1,
             biBitCount: 32,
             biCompression: BI_RGB.0,
@@ -93,7 +109,7 @@ pub fn paint_frame(dc: HDC, dest: &RECT, frame: &Frame, src: (i32, i32, i32, i32
         ..Default::default()
     };
     let (dw, dh) = rect_wh(dest);
-    // SAFETY: the frame buffer has width × height × 4 bytes, as `info` says.
+    // SAFETY: `bits` has at least w × h × 4 bytes, as `info` says.
     unsafe {
         SetStretchBltMode(dc, HALFTONE);
         let _ = SetBrushOrgEx(dc, 0, 0, None);
@@ -103,11 +119,11 @@ pub fn paint_frame(dc: HDC, dest: &RECT, frame: &Frame, src: (i32, i32, i32, i32
             dest.top,
             dw,
             dh,
-            src.0,
-            src.1,
-            src.2,
-            src.3,
-            Some(frame.bgra.as_ptr() as *const _),
+            0,
+            0,
+            w as i32,
+            h as i32,
+            Some(bits.as_ptr() as *const _),
             &info,
             DIB_RGB_COLORS,
             SRCCOPY,

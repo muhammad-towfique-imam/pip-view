@@ -84,6 +84,31 @@ pub fn rank_modes(modes: &[VideoMode]) -> Vec<usize> {
     small
 }
 
+/// The most modes that the capture thread tries.
+pub const MAX_TRIES: usize = 3;
+
+/// The modes to try, in order: the best mode, then the best mode with a
+/// different subtype (if Windows cannot convert 1 subtype, the 2nd try uses
+/// another), then the next best modes, at most `MAX_TRIES`.
+pub fn try_order(modes: &[VideoMode]) -> Vec<usize> {
+    let ranked = rank_modes(modes);
+    let Some(&first) = ranked.first() else { return Vec::new() };
+    let mut order = vec![first];
+    if let Some(&other) = ranked.iter().find(|&&i| modes[i].subtype != modes[first].subtype) {
+        order.push(other);
+    }
+    for &i in &ranked {
+        if order.len() >= MAX_TRIES {
+            break;
+        }
+        if !order.contains(&i) {
+            order.push(i);
+        }
+    }
+    order.truncate(MAX_TRIES);
+    order
+}
+
 /// The stream to use: the saved one if it is a color stream of this camera,
 /// else the first color Preview stream, else the first color stream.
 pub fn default_stream(streams: &[StreamInfo], saved: Option<u32>) -> Option<u32> {
@@ -150,6 +175,24 @@ mod tests {
     #[test]
     fn rank_empty() {
         assert!(rank_modes(&[]).is_empty());
+    }
+
+    #[test]
+    fn try_order_puts_a_different_subtype_second() {
+        let modes = [m(1920, 1080, 30, MJPG), m(1280, 720, 30, MJPG), m(1280, 720, 30, YUY2), m(640, 480, 30, MJPG)];
+        assert_eq!(try_order(&modes), vec![0, 2, 1]);
+    }
+
+    #[test]
+    fn try_order_same_subtype_is_rank_order() {
+        let modes = [m(640, 480, 30, MJPG), m(1920, 1080, 30, MJPG), m(1280, 720, 30, MJPG), m(320, 240, 30, MJPG)];
+        assert_eq!(try_order(&modes), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn try_order_short_lists() {
+        assert!(try_order(&[]).is_empty());
+        assert_eq!(try_order(&[m(640, 480, 30, MJPG)]), vec![0]);
     }
 
     #[test]

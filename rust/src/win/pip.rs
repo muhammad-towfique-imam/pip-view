@@ -188,6 +188,8 @@ fn menu(x: i32, y: i32) {
         // The menu closes correctly only if the window is in the foreground.
         let _ = SetForegroundWindow(pip);
         let cmd = TrackPopupMenu(root, TPM_RETURNCMD | TPM_RIGHTBUTTON, x, y, Some(0), pip, None);
+        // The documented way to make the next click outside close the menu.
+        let _ = PostMessageW(Some(pip), WM_NULL, WPARAM(0), LPARAM(0));
         let _ = DestroyMenu(root);
         cmd.0 as u32
     };

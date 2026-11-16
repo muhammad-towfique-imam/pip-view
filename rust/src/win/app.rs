@@ -108,6 +108,11 @@ pub struct App {
     /// The stream index of each list item (only color streams are listed).
     listed: Vec<u32>,
     stream_job: Option<(Pending<Vec<StreamInfo>>, String)>,
+    /// A stream listing that waits for an earlier listing job to end, and
+    /// the time of the request.
+    stream_wanted: Option<(Device, Instant)>,
+    /// A camera listing that waits for an earlier listing job to end.
+    devices_wanted: Option<Instant>,
     pub device: Option<Device>,
     pub stream: Option<u32>,
 
@@ -238,6 +243,8 @@ impl App {
             streams: Vec::new(),
             listed: Vec::new(),
             stream_job: None,
+            stream_wanted: None,
+            devices_wanted: None,
             device: None,
             stream: None,
             area,
@@ -317,12 +324,19 @@ impl App {
         ops
     }
 
+    /// Lists the cameras. If a listing job still runs, its result is used,
+    /// or (if it is an old detached job) the new job starts when it ends.
     pub fn start_device_job(&mut self) -> Vec<Op> {
+        let ops = vec![self.status("Reading cameras…"), Op::List(self.controls.cam_list, Vec::new(), None)];
+        if self.device_job.is_some() {
+            return ops;
+        }
         if alive(DEVICE_JOB) > 0 {
-            return vec![self.status(NOT_RESPONDING)];
+            self.devices_wanted = Some(Instant::now());
+            return ops;
         }
         self.device_job = Some(Pending::new(DEVICE_JOB, mf::list_devices));
-        vec![self.status("Reading cameras…"), Op::List(self.controls.cam_list, Vec::new(), None)]
+        ops
     }
 
     fn start_stream_job(&mut self, device: &Device) -> Vec<Op> {
@@ -330,20 +344,46 @@ impl App {
         self.listed.clear();
         self.stream = None;
         let mut ops = vec![Op::List(self.controls.stream_list, Vec::new(), None), self.next_enabled()];
-        if alive(STREAM_JOB) > 0 {
-            ops.push(self.status(NOT_RESPONDING));
-            return ops;
-        }
-        let id = device.id.clone();
-        let job_id = id.clone();
-        self.stream_job = Some((Pending::new(STREAM_JOB, move || mf::probe_streams(&job_id)), id));
+        self.stream_wanted = Some((device.clone(), Instant::now()));
+        self.start_wanted_stream_job();
         ops.push(self.status("Reading streams…"));
         ops
+    }
+
+    /// Starts the wanted stream listing if no other listing job runs. A
+    /// listing opens the camera, which cannot be interrupted.
+    fn start_wanted_stream_job(&mut self) {
+        if self.stream_job.is_some() || alive(STREAM_JOB) > 0 {
+            return;
+        }
+        if let Some((device, _)) = self.stream_wanted.take() {
+            let id = device.id.clone();
+            let job_id = id.clone();
+            self.stream_job = Some((Pending::new(STREAM_JOB, move || mf::probe_streams(&job_id)), id));
+        }
+    }
+
+    /// A listing step took longer than the limit.
+    fn not_responding(&mut self, what: &str) -> Vec<Op> {
+        log!("{what}: no result in {} s", JOB_LIMIT.as_secs());
+        if self.auto_start {
+            return self.auto_failed("The camera does not respond.");
+        }
+        vec![self.status("The camera does not respond.")]
     }
 
     /// Called by the 100 ms timer: takes the results of the listing jobs.
     pub fn poll_jobs(&mut self) -> Vec<Op> {
         let mut ops = Vec::new();
+        if let Some(since) = self.devices_wanted {
+            if alive(DEVICE_JOB) == 0 {
+                self.devices_wanted = None;
+                self.device_job = Some(Pending::new(DEVICE_JOB, mf::list_devices));
+            } else if since.elapsed() > JOB_LIMIT {
+                self.devices_wanted = None;
+                ops.extend(self.not_responding("camera list (an earlier job still runs)"));
+            }
+        }
         if let Some(p) = &mut self.device_job {
             if let Some(result) = p.job.poll() {
                 log!("camera list in {} ms", p.started.elapsed().as_millis());
@@ -351,8 +391,7 @@ impl App {
                 ops.extend(self.devices_ready(result));
             } else if !p.reported && p.started.elapsed() > JOB_LIMIT {
                 p.reported = true;
-                log!("camera list: no result in {} s", JOB_LIMIT.as_secs());
-                ops.push(self.status("The camera does not respond."));
+                ops.extend(self.not_responding("camera list"));
             }
         }
         if let Some((p, id)) = &mut self.stream_job {
@@ -363,8 +402,13 @@ impl App {
                 ops.extend(self.streams_ready(result, &id));
             } else if !p.reported && p.started.elapsed() > JOB_LIMIT {
                 p.reported = true;
-                log!("stream list: no result in {} s", JOB_LIMIT.as_secs());
-                ops.push(self.status("The camera does not respond."));
+                ops.extend(self.not_responding("stream list"));
+            }
+        }
+        self.start_wanted_stream_job();
+        if let Some((_, since)) = &self.stream_wanted {
+            if since.elapsed() > JOB_LIMIT && self.status_text != "The camera does not respond." {
+                ops.extend(self.not_responding("stream list (an earlier job still runs)"));
             }
         }
         ops
@@ -436,10 +480,14 @@ impl App {
             }
             return vec![self.status("This camera has no color stream."), self.next_enabled()];
         }
+        // The saved stream also applies when the camera was found by name
+        // (the id changes after a USB port change). `default_stream` checks
+        // that the stream exists.
+        let device_name = self.device.as_ref().map(|d| d.name.clone()).unwrap_or_default();
         let saved_stream = self
             .saved
             .as_ref()
-            .filter(|c| c.camera_id.as_deref() == Some(id))
+            .filter(|c| c.camera_id.as_deref() == Some(id) || c.camera_name == device_name)
             .and_then(|c| c.stream);
         let chosen = default_stream(&streams, saved_stream);
         self.listed = color.iter().map(|s| s.index).collect();
