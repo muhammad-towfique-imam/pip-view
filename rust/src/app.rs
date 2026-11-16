@@ -1,9 +1,10 @@
 //! The app window: camera select, area select, and PiP modes.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{
-    self, pos2, vec2, Color32, ColorImage, PointerButton, Pos2, Rect, ResizeDirection, Sense,
+    self, pos2, vec2, Color32, PointerButton, Pos2, Rect, ResizeDirection, Sense,
     Stroke, StrokeKind, TextureHandle, TextureOptions, ViewportCommand, WindowLevel,
 };
 
@@ -11,6 +12,41 @@ use crate::border::{Border, BORDER_PX};
 use crate::camera::{self, Capture};
 use crate::config::{self, Config};
 use crate::geometry::{fit_aspect, pip_size, position_visible, NormRect, PIP_WIDTH};
+use crate::log::log;
+use crate::watchdog::{self, Stage};
+
+/// Runs `f` as UI step `stage` for the watchdog, then returns to `back`.
+fn staged<T>(stage: Stage, back: Stage, f: impl FnOnce() -> T) -> T {
+    watchdog::enter(stage);
+    let r = f();
+    watchdog::enter(back);
+    r
+}
+
+/// Time totals of the UI thread for the log, written every 5 seconds.
+struct UiStats {
+    frames: u32,
+    update: Duration,
+    upload: Duration,
+    uploads: u32,
+    max_update: Duration,
+    since: Instant,
+}
+
+impl Default for UiStats {
+    fn default() -> Self {
+        UiStats {
+            frames: 0,
+            update: Duration::ZERO,
+            upload: Duration::ZERO,
+            uploads: 0,
+            max_update: Duration::ZERO,
+            since: Instant::now(),
+        }
+    }
+}
+
+const UI_STATS_EVERY: Duration = Duration::from_secs(5);
 
 /// Smallest PiP window size in points, so that it can still be grabbed.
 const MIN_PIP: [f32; 2] = [64.0, 48.0];
@@ -26,6 +62,38 @@ enum Mode {
     SelectCamera,
     SelectArea,
     Pip,
+}
+
+impl Mode {
+    fn name(self) -> &'static str {
+        match self {
+            Mode::SelectCamera => "camera select",
+            Mode::SelectArea => "area select",
+            Mode::Pip => "PiP",
+        }
+    }
+}
+
+/// Writes the GPU and the renderer to the log.
+fn log_renderer(cc: &eframe::CreationContext) {
+    if let Some(rs) = &cc.wgpu_render_state {
+        let i = rs.adapter.get_info();
+        log!(
+            "GPU: {} ({:?}, {:?}), driver {} {}",
+            i.name,
+            i.backend,
+            i.device_type,
+            i.driver,
+            i.driver_info
+        );
+    }
+    if let Some(gl) = &cc.gl {
+        use eframe::glow::HasContext as _;
+        // SAFETY: glGetString with valid enums on the current context.
+        let (renderer, version) =
+            unsafe { (gl.get_parameter_string(eframe::glow::RENDERER), gl.get_parameter_string(eframe::glow::VERSION)) };
+        log!("GPU: {renderer}, OpenGL {version}");
+    }
 }
 
 pub struct PipApp {
@@ -50,6 +118,9 @@ pub struct PipApp {
     /// The PiP window waits for the first frame to get its size.
     pip_size_pending: bool,
     border: Border,
+    /// The renderer choice from config.json, kept when the app saves.
+    renderer: Option<String>,
+    stats: UiStats,
 }
 
 impl PipApp {
@@ -72,10 +143,13 @@ impl PipApp {
             startup_pip: false,
             pip_size_pending: false,
             border: Border::None,
+            renderer: None,
+            stats: UiStats::default(),
         };
+        log_renderer(cc);
         // Zoom would change the points-to-pixels scale of the saved geometry.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
-        app.refresh_cameras();
+        staged(Stage::RefreshCameras, Stage::Outside, || app.refresh_cameras());
 
         let saved = app.config_path.as_deref().and_then(config::load);
         if let Some(cfg) = saved {
@@ -83,17 +157,25 @@ impl PipApp {
             app.window_size = cfg.window_size;
             app.area = cfg.area;
             app.border = cfg.border;
+            app.renderer = cfg.renderer;
+            log!("saved camera: \"{}\", area {:?}", cfg.camera_name, cfg.area);
             if let Some(index) = config::find_camera(&app.cameras, &cfg.camera_name) {
                 app.selected = Some(index);
                 app.start_capture(index, &cc.egui_ctx);
                 app.startup_pip = true;
+            } else {
+                log!("saved camera is not connected");
             }
         }
+        watchdog::enter(Stage::Outside);
         app
     }
 
     fn refresh_cameras(&mut self) {
-        match camera::list_cameras() {
+        let t = Instant::now();
+        let result = camera::list_cameras();
+        log!("camera list in {} ms: {:?}", t.elapsed().as_millis(), result.as_ref().map_err(|e| format!("{e:#}")));
+        match result {
             Ok(list) => self.cameras = list,
             Err(e) => {
                 self.cameras.clear();
@@ -106,12 +188,14 @@ impl PipApp {
     }
 
     fn start_capture(&mut self, index: usize, ctx: &egui::Context) {
-        self.capture = None; // Stop the old thread first.
+        let back = Stage::Ui;
+        staged(Stage::StopCapture, back, || self.capture = None); // Stop the old thread first.
+        log!("start capture: camera {index} \"{}\"", self.cameras[index]);
         self.camera_name = self.cameras[index].clone();
         self.frame_size = None;
         self.last_seq = 0;
         self.error = None;
-        self.capture = Some(Capture::start(index, ctx.clone()));
+        self.capture = Some(staged(Stage::StartCapture, back, || Capture::start(index, ctx.clone())));
     }
 
     fn save_config(&self) {
@@ -122,9 +206,10 @@ impl PipApp {
             window_pos: self.window_pos,
             window_size: self.window_size,
             border: self.border,
+            renderer: self.renderer.clone(),
         };
-        if let Err(e) = config::save(path, &cfg) {
-            eprintln!("webcam-view-pip: cannot save config: {e:#}");
+        if let Err(e) = staged(Stage::SaveConfig, Stage::Ui, || config::save(path, &cfg)) {
+            log!("cannot save config: {e:#}");
         }
     }
 
@@ -158,6 +243,13 @@ impl PipApp {
     }
 
     fn enter_pip(&mut self, ctx: &egui::Context) {
+        log!(
+            "enter PiP: saved pos {:?}, size {:?}, ppp {}, monitor {:?}",
+            self.window_pos,
+            self.window_size,
+            ctx.pixels_per_point(),
+            Self::monitor_size(ctx)
+        );
         self.mode = Mode::Pip;
         ctx.send_viewport_cmd(ViewportCommand::Decorations(false));
         ctx.send_viewport_cmd(ViewportCommand::WindowLevel(WindowLevel::AlwaysOnTop));
@@ -188,6 +280,7 @@ impl PipApp {
     }
 
     fn leave_pip(&mut self, ctx: &egui::Context, next: Mode) {
+        log!("leave PiP: next mode {}", next.name());
         if self.mode == Mode::Pip {
             self.read_window_geometry(ctx);
             self.save_config();
@@ -200,9 +293,9 @@ impl PipApp {
 
     fn go_to_camera_select(&mut self, ctx: &egui::Context) {
         self.leave_pip(ctx, Mode::SelectCamera);
-        self.capture = None;
+        staged(Stage::StopCapture, Stage::Ui, || self.capture = None);
         self.texture = None;
-        self.refresh_cameras();
+        staged(Stage::RefreshCameras, Stage::Ui, || self.refresh_cameras());
     }
 
     /// Uploads a new camera frame and handles a camera failure.
@@ -219,12 +312,16 @@ impl PipApp {
         }
         self.last_seq = frame.seq;
         self.frame_size = Some((frame.width, frame.height));
-        let image =
-            ColorImage::from_rgba_unmultiplied([frame.width as usize, frame.height as usize], &frame.rgba);
+        let t = Instant::now();
+        watchdog::enter(Stage::Upload);
+        let image = frame.image.clone();
         match &mut self.texture {
             Some(t) => t.set(image, TextureOptions::LINEAR),
             None => self.texture = Some(ctx.load_texture("camera", image, TextureOptions::LINEAR)),
         }
+        watchdog::enter(Stage::PollCapture);
+        self.stats.upload += t.elapsed();
+        self.stats.uploads += 1;
         if self.mode == Mode::Pip && self.pip_size_pending {
             if let Some(size) = self.pip_size_for_area(ctx) {
                 ctx.send_viewport_cmd(ViewportCommand::InnerSize(size));
@@ -343,7 +440,9 @@ impl PipApp {
             // The drag starts only after the pointer moved a few points, so
             // use the press position, not the current position.
             let press = ui.input(|i| i.pointer.press_origin());
-            ctx.send_viewport_cmd(pip_drag_command(press, c));
+            let cmd = pip_drag_command(press, c);
+            log!("PiP drag: {cmd:?} (touch: {})", ui.input(|i| i.any_touches()));
+            ctx.send_viewport_cmd(cmd);
         }
 
         response.context_menu(|ui| {
@@ -411,12 +510,44 @@ fn place(container: Rect, aspect: f32) -> Rect {
 
 impl eframe::App for PipApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let started = Instant::now();
+        watchdog::enter(Stage::PollCapture);
+        self.ui_frame(ui);
+        watchdog::enter(Stage::Outside);
+        self.record_frame(started.elapsed());
+    }
+}
+
+impl PipApp {
+    fn record_frame(&mut self, took: Duration) {
+        let s = &mut self.stats;
+        s.frames += 1;
+        s.update += took;
+        s.max_update = s.max_update.max(took);
+        let elapsed = s.since.elapsed();
+        if elapsed >= UI_STATS_EVERY {
+            log!(
+                "ui: {:.1} frames/s, update {:.1} ms (max {:.0}), upload {:.1} ms x {}, frame {:?}, mode {}",
+                s.frames as f64 / elapsed.as_secs_f64(),
+                s.update.as_secs_f64() * 1000.0 / s.frames.max(1) as f64,
+                s.max_update.as_secs_f64() * 1000.0,
+                s.upload.as_secs_f64() * 1000.0 / s.uploads.max(1) as f64,
+                s.uploads,
+                self.frame_size,
+                self.mode.name()
+            );
+            self.stats = UiStats::default();
+        }
+    }
+
+    fn ui_frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         if self.startup_pip {
             self.startup_pip = false;
             self.enter_pip(&ctx);
         }
         self.poll_capture(&ctx);
+        watchdog::enter(Stage::Ui);
 
         if self.mode == Mode::Pip && ctx.input(|i| i.viewport().close_requested()) {
             self.read_window_geometry(&ctx);

@@ -17,6 +17,9 @@ pub struct Config {
     /// Missing in a v0.1.0 config file; then `Border::None`.
     #[serde(default)]
     pub border: Border,
+    /// "glow" selects the OpenGL renderer. Missing or other: wgpu.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renderer: Option<String>,
 }
 
 /// `%APPDATA%\webcam-view-pip\config.json` on Windows.
@@ -57,6 +60,7 @@ mod tests {
             window_pos: Some((10.0, 20.0)),
             window_size: Some((320.0, 180.0)),
             border: Border::Red,
+            renderer: Some("glow".into()),
         }
     }
 
@@ -105,6 +109,26 @@ mod tests {
         let cfg = load(&path).expect("old config must load");
         assert_eq!(cfg.border, Border::None);
         assert_eq!(cfg.camera_name, "Logitech C920");
+    }
+
+    #[test]
+    fn config_without_renderer_uses_wgpu() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, V010_JSON).unwrap();
+        assert_eq!(load(&path).unwrap().renderer, None);
+    }
+
+    #[test]
+    fn renderer_is_kept_when_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let json = V010_JSON.replacen('{', r#"{ "renderer": "glow","#, 1);
+        std::fs::write(&path, json).unwrap();
+        let cfg = load(&path).unwrap();
+        assert_eq!(cfg.renderer.as_deref(), Some("glow"));
+        save(&path, &cfg).unwrap();
+        assert_eq!(load(&path).unwrap().renderer.as_deref(), Some("glow"));
     }
 
     #[test]

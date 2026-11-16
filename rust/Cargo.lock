@@ -987,6 +987,7 @@ dependencies = [
  "egui-winit",
  "egui_glow",
  "egui_system_font_provider",
+ "glow",
  "glutin",
  "glutin-winit",
  "image",
@@ -4206,7 +4207,7 @@ dependencies = [
 
 [[package]]
 name = "webcam-view-pip"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "directories",

@@ -4,19 +4,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context as _};
 use eframe::egui;
 use nokhwa::pixel_format::RgbFormat;
-use nokhwa::utils::{ApiBackend, CameraInfo, RequestedFormat, RequestedFormatType};
+use nokhwa::pixel_format::FormatDecoder as _;
+use nokhwa::utils::{ApiBackend, CameraFormat, CameraInfo, FrameFormat, RequestedFormat, RequestedFormatType};
 use nokhwa::Camera;
 
-/// 1 decoded camera frame in RGBA.
+use crate::log::log;
+use crate::watchdog::CAPTURE_FRAMES;
+
+/// 1 decoded camera frame, ready for the texture. The capture thread makes
+/// the image, so that the UI thread does not convert pixels.
 pub struct Frame {
     pub width: u32,
     pub height: u32,
-    pub rgba: Vec<u8>,
+    pub image: Arc<egui::ColorImage>,
     /// Increases by 1 for each new frame.
     pub seq: u64,
 }
@@ -62,13 +67,20 @@ impl Capture {
         let shared = Arc::new(Shared::default());
         let thread_shared = shared.clone();
         let (done_tx, done) = mpsc::channel::<()>();
-        let thread = std::thread::spawn(move || {
-            let _done_tx = done_tx; // Dropped when the thread ends.
-            if let Err(e) = body(&thread_shared, &ctx) {
-                *thread_shared.error.lock().unwrap() = Some(format!("{e:#}"));
-                ctx.request_repaint();
-            }
-        });
+        let thread = std::thread::Builder::new()
+            .name("capture".into())
+            .spawn(move || {
+                let _done_tx = done_tx; // Dropped when the thread ends.
+                match body(&thread_shared, &ctx) {
+                    Ok(()) => log!("capture thread ended"),
+                    Err(e) => {
+                        log!("camera error: {e:#}");
+                        *thread_shared.error.lock().unwrap() = Some(format!("{e:#}"));
+                        ctx.request_repaint();
+                    }
+                }
+            })
+            .expect("start the capture thread");
         Capture { shared, thread: Some(thread), done }
     }
 
@@ -92,8 +104,29 @@ impl Drop for Capture {
         let ended = !matches!(self.done.recv_timeout(STOP_TIMEOUT), Err(RecvTimeoutError::Timeout));
         if let (true, Some(t)) = (ended, self.thread.take()) {
             let _ = t.join();
+        } else {
+            log!("capture thread did not end in {} ms; detached", STOP_TIMEOUT.as_millis());
         }
     }
+}
+
+/// The largest frame that the app asks for. The PiP shows a small window,
+/// and a larger frame costs much CPU time on each frame.
+const MAX_PIXELS: u32 = 1920 * 1080;
+/// A higher frame rate does not make the PiP better, but costs CPU time.
+const MAX_USEFUL_FPS: u32 = 30;
+
+/// The camera format to use: a format that the app can decode, up to 1080p,
+/// with the frame rate up to 30 fps first, then the largest resolution.
+/// If all formats are larger than 1080p, the smallest one.
+fn choose_format(formats: &[CameraFormat], decodable: &[FrameFormat]) -> Option<CameraFormat> {
+    let pixels = |f: &CameraFormat| f.width() * f.height();
+    let usable = formats.iter().filter(|f| decodable.contains(&f.format()));
+    let small = usable.clone().filter(|f| pixels(f) <= MAX_PIXELS);
+    if let Some(best) = small.max_by_key(|f| (f.frame_rate().min(MAX_USEFUL_FPS), pixels(f), f.frame_rate())) {
+        return Some(*best);
+    }
+    usable.min_by_key(|f| (pixels(f), std::cmp::Reverse(f.frame_rate().min(MAX_USEFUL_FPS)))).copied()
 }
 
 /// nokhwa initializes COM 1 time, on the first thread that uses it. But the
@@ -111,31 +144,97 @@ fn init_com() {
 fn run(index: usize, shared: &Shared, ctx: &egui::Context) -> anyhow::Result<()> {
     #[cfg(windows)]
     init_com();
+    let t = Instant::now();
     let infos = query()?;
     let info = infos.get(index).ok_or_else(|| anyhow!("camera {index} is not connected"))?;
-    let format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
-    let mut camera = Camera::new(info.index().clone(), format)
+    log!("camera query: {} cameras in {} ms", infos.len(), t.elapsed().as_millis());
+    // Open with any format that the app can decode, then select a better one.
+    let any = RequestedFormat::new::<RgbFormat>(RequestedFormatType::None);
+    let t = Instant::now();
+    let mut camera = Camera::new(info.index().clone(), any)
         .with_context(|| format!("open camera \"{}\"", info.human_name()))?;
+    log!("camera open: \"{}\" in {} ms", info.human_name(), t.elapsed().as_millis());
+    match camera.compatible_camera_formats() {
+        Ok(formats) => {
+            let list: Vec<String> = formats.iter().map(|f| f.to_string()).collect();
+            log!("camera formats: {}", list.join("; "));
+            if let Some(best) = choose_format(&formats, RgbFormat::FORMATS) {
+                let exact = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(best));
+                if let Err(e) = camera.set_camera_requset(exact) {
+                    log!("cannot set format {best}: {e}");
+                }
+            }
+        }
+        Err(e) => log!("cannot list camera formats: {e}"),
+    }
+    log!("camera format: {}", camera.camera_format());
+    let t = Instant::now();
     camera.open_stream().context("start camera stream")?;
+    log!("camera stream started in {} ms", t.elapsed().as_millis());
 
     let result = capture_loop(&mut camera, shared, ctx);
     let _ = camera.stop_stream();
     result
 }
 
+/// Time totals for the capture log, written every 5 seconds.
+#[derive(Default)]
+struct CaptureStats {
+    frames: u32,
+    read: Duration,
+    decode: Duration,
+    convert: Duration,
+    max_read: Duration,
+}
+
+const STATS_EVERY: Duration = Duration::from_secs(5);
+
 fn capture_loop(camera: &mut Camera, shared: &Shared, ctx: &egui::Context) -> anyhow::Result<()> {
     let mut seq = 0u64;
+    let started = Instant::now();
+    let mut stats = CaptureStats::default();
+    let mut stats_since = Instant::now();
     while !shared.stop.load(Ordering::Relaxed) {
+        let t = Instant::now();
         let buffer = camera.frame().context("read camera frame")?;
+        let read = t.elapsed();
+        let t = Instant::now();
         let image = buffer.decode_image::<RgbFormat>().context("decode camera frame")?;
+        let decode = t.elapsed();
+        let t = Instant::now();
         let (width, height) = image.dimensions();
-        let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
-        for px in image.as_raw().chunks_exact(3) {
-            rgba.extend_from_slice(&[px[0], px[1], px[2], 255]);
-        }
+        let color = Arc::new(egui::ColorImage::from_rgb([width as usize, height as usize], image.as_raw()));
+        let convert = t.elapsed();
         seq += 1;
-        *shared.latest.lock().unwrap() = Some(Arc::new(Frame { width, height, rgba, seq }));
+        if seq == 1 {
+            log!(
+                "first frame {width}x{height} ({:?}) after {} ms",
+                buffer.source_frame_format(),
+                started.elapsed().as_millis()
+            );
+        }
+        *shared.latest.lock().unwrap() = Some(Arc::new(Frame { width, height, image: color, seq }));
+        CAPTURE_FRAMES.fetch_add(1, Ordering::Relaxed);
         ctx.request_repaint();
+
+        stats.frames += 1;
+        stats.read += read;
+        stats.decode += decode;
+        stats.convert += convert;
+        stats.max_read = stats.max_read.max(read);
+        if stats_since.elapsed() >= STATS_EVERY {
+            let n = stats.frames.max(1);
+            log!(
+                "capture: {:.1} fps, read {:.1} ms (max {:.0}), decode {:.1} ms, convert {:.1} ms",
+                stats.frames as f64 / stats_since.elapsed().as_secs_f64(),
+                stats.read.as_secs_f64() * 1000.0 / n as f64,
+                stats.max_read.as_secs_f64() * 1000.0,
+                stats.decode.as_secs_f64() * 1000.0 / n as f64,
+                stats.convert.as_secs_f64() * 1000.0 / n as f64,
+            );
+            stats = CaptureStats::default();
+            stats_since = Instant::now();
+        }
     }
     Ok(())
 }
@@ -144,6 +243,54 @@ fn capture_loop(camera: &mut Camera, shared: &Shared, ctx: &egui::Context) -> an
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    use nokhwa::utils::{CameraFormat, FrameFormat, Resolution};
+
+    fn f(w: u32, h: u32, fps: u32, ff: FrameFormat) -> CameraFormat {
+        CameraFormat::new(Resolution::new(w, h), ff, fps)
+    }
+
+    const DECODABLE: &[FrameFormat] = &[FrameFormat::MJPEG, FrameFormat::YUYV, FrameFormat::NV12];
+
+    #[test]
+    fn choose_skips_4k_and_takes_1080p_30() {
+        let formats = [
+            f(3840, 2160, 30, FrameFormat::MJPEG),
+            f(1920, 1080, 30, FrameFormat::MJPEG),
+            f(1280, 720, 30, FrameFormat::MJPEG),
+        ];
+        assert_eq!(choose_format(&formats, DECODABLE), Some(f(1920, 1080, 30, FrameFormat::MJPEG)));
+    }
+
+    #[test]
+    fn choose_prefers_30_fps_over_resolution() {
+        let formats = [f(1920, 1080, 5, FrameFormat::YUYV), f(1280, 720, 30, FrameFormat::MJPEG)];
+        assert_eq!(choose_format(&formats, DECODABLE), Some(f(1280, 720, 30, FrameFormat::MJPEG)));
+    }
+
+    #[test]
+    fn choose_does_not_take_60_fps_over_resolution() {
+        let formats = [f(640, 480, 60, FrameFormat::MJPEG), f(1920, 1080, 30, FrameFormat::MJPEG)];
+        assert_eq!(choose_format(&formats, DECODABLE), Some(f(1920, 1080, 30, FrameFormat::MJPEG)));
+    }
+
+    #[test]
+    fn choose_ignores_formats_it_cannot_decode() {
+        // nokhwa's AbsoluteHighestFrameRate fails here: the top rate is in a format it cannot decode.
+        let formats = [f(1280, 720, 60, FrameFormat::RAWBGR), f(1280, 720, 30, FrameFormat::MJPEG)];
+        assert_eq!(choose_format(&[formats[0], formats[1]], &[FrameFormat::MJPEG]), Some(formats[1]));
+    }
+
+    #[test]
+    fn choose_takes_smallest_if_all_are_above_1080p() {
+        let formats = [f(3840, 2160, 30, FrameFormat::MJPEG), f(2560, 1440, 30, FrameFormat::MJPEG)];
+        assert_eq!(choose_format(&formats, DECODABLE), Some(f(2560, 1440, 30, FrameFormat::MJPEG)));
+    }
+
+    #[test]
+    fn choose_with_nothing_decodable_is_none() {
+        assert_eq!(choose_format(&[f(640, 480, 30, FrameFormat::RAWBGR)], DECODABLE), None);
+    }
 
     #[test]
     fn drop_does_not_wait_for_a_stuck_thread() {

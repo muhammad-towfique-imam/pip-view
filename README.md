@@ -45,6 +45,17 @@ The app saves the camera, the area, and the window position in
 window directly. If the saved camera is not connected, the app opens the
 camera list. To start the setup again, delete the config file.
 
+### If the Windows app freezes
+
+The app writes a log to `%APPDATA%\webcam-view-pip\log.txt`. The log shows
+the camera formats, the GPU, the time of each step, and the step where the
+window stopped (lines with `UI STALL`). The app starts a new log at each start,
+so copy the file before you start the app again. Send the file with a problem
+report.
+
+To use OpenGL in place of the default renderer, add `"renderer": "glow",` after
+the first `{` in `%APPDATA%\webcam-view-pip\config.json`.
+
 ## Use on Android
 
 1. Install `webcam-view-pip.apk`. Android asks you to allow installs from
